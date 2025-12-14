@@ -149,10 +149,19 @@
         },
         [
           h("defs", { key: "defs" }, [
-            // Gradients definitions...
             h("linearGradient", { id: "areaGradient", x1: "0%", y1: "0%", x2: "0%", y2: "100%" }, [
-              h("stop", { offset: "0%", stopColor: "rgba(236, 72, 153, 0.2)" }),
+              h("stop", { offset: "0%", stopColor: "rgba(236, 72, 153, 0.4)" }, [
+                h("animate", { attributeName: "stop-opacity", values: "0.4; 0.6; 0.4", dur: "3s", repeatCount: "indefinite" })
+              ]),
               h("stop", { offset: "100%", stopColor: "rgba(236, 72, 153, 0)" })
+            ]),
+            // Moving Horizontal Flow (Extra Texture)
+            h("linearGradient", { id: "flowGradient", x1: "0%", y1: "0%", x2: "100%", y2: "0%" }, [
+              h("stop", { offset: "0%", stopColor: "rgba(236, 72, 153, 0)" }),
+              h("stop", { offset: "50%", stopColor: "rgba(236, 72, 153, 0.2)" }),
+              h("stop", { offset: "100%", stopColor: "rgba(236, 72, 153, 0)" }),
+              h("animate", { attributeName: "x1", values: "-100%; 100%", dur: "3s", repeatCount: "indefinite" }),
+              h("animate", { attributeName: "x2", values: "0%; 200%", dur: "3s", repeatCount: "indefinite" })
             ]),
             h("filter", { id: "glow", x: "-50%", y: "-50%", width: "200%", height: "200%" }, [
               h("feGaussianBlur", { stdDeviation: "3", result: "coloredBlur" }),
@@ -167,12 +176,20 @@
           ...gridYLines,
           ...gridXLines,
 
-          // Area Fill
+          // Area Fill (Base)
           h("polyline", {
             key: "area",
             points: `${padding.left},${height - padding.bottom} ${points} ${width - padding.right},${height - padding.bottom}`,
             fill: "url(#areaGradient)",
             stroke: "none",
+          }),
+          // Area Flow Texture (Animated)
+          h("polyline", {
+            key: "area-flow",
+            points: `${padding.left},${height - padding.bottom} ${points} ${width - padding.right},${height - padding.bottom}`,
+            fill: "url(#flowGradient)",
+            stroke: "none",
+            style: { mixBlendMode: "screen" }
           }),
 
           // Main Line
@@ -243,11 +260,22 @@
     const paddingLeftPctStr = `${(paddingLeftPx / graphWidthPx) * 100}%`;
     const paddingRightPctStr = `${(paddingRightPx / graphWidthPx) * 100}%`;
 
-    const handleMouseMove = (e) => {
+    // Unified Event Helper
+    const getClientY = (e) => {
+      return e.touches ? e.touches[0].clientY : e.clientY;
+    };
+
+    const handleMove = (e) => {
       if (!dragging.current || !overlayRef.current) return;
 
+      // Prevent scrolling on touch devices while dragging
+      if (e.touches) {
+        // e.preventDefault(); // Handled by passive: false in listener
+      }
+
       const rect = overlayRef.current.getBoundingClientRect();
-      const mouseY = e.clientY - rect.top;
+      const clientY = getClientY(e);
+      const mouseY = clientY - rect.top;
 
       // Constrain to graph area (accounting for padding)
       const minY = (paddingTopPx / graphHeightPx) * rect.height; // Scale to actual client height
@@ -262,14 +290,13 @@
       const ratio = (constrainedY - minY) / graphAreaHeight;
 
       // Calculate tick from ratio (0 at bottom, TICKS at top)
-      // range 0 to TICKS
-      const tick = clamp(Math.round((1 - ratio) * TICKS), 0, TICKS); // Allow 0
+      const tick = clamp(Math.round((1 - ratio) * TICKS), 0, TICKS);
 
       let newLow = validLow;
       let newHigh = validHigh;
 
       if (dragging.current === "band") {
-        const deltaY = e.clientY - dragStartY.current;
+        const deltaY = clientY - dragStartY.current;
         if (Math.abs(deltaY) < 2) return;
 
         // Delta tick based on percentage of movement
@@ -280,53 +307,29 @@
         newLow = dragStartLow.current - deltaTick;
         newHigh = newLow + span;
 
-        const validSpan = Math.max(1, Math.min(span, TICKS)); // Span can be TICKS (0-1000)
+        const validSpan = Math.max(1, Math.min(span, TICKS));
         const maxLow = TICKS - validSpan;
 
-        newLow = clamp(newLow, 0, maxLow); // Allow 0
+        newLow = clamp(newLow, 0, maxLow);
         newHigh = newLow + validSpan;
 
       } else if (dragging.current === "low") {
         const maxLow = Math.min(validHigh - 1, TICKS - 1);
-        const constrainedTick = Math.max(0, Math.min(tick, maxLow)); // Allow 0
+        const constrainedTick = Math.max(0, Math.min(tick, maxLow));
         newLow = constrainedTick;
         newHigh = Math.max(constrainedTick + 1, Math.min(validHigh, TICKS));
 
       } else if (dragging.current === "high") {
-        const minHigh = Math.max(validLow + 1, 1); // High must be > low (>=0) so >=1
+        const minHigh = Math.max(validLow + 1, 1);
         const constrainedTick = Math.max(minHigh, Math.min(tick, TICKS));
         newHigh = constrainedTick;
-        newLow = Math.max(0, Math.min(validLow, constrainedTick - 1)); // Allow 0
+        newLow = Math.max(0, Math.min(validLow, constrainedTick - 1));
       }
 
       if (newHigh - newLow > 800) {
         if (dragging.current === "low") {
-          newLow = newHigh - 800; // Recalc low if high is fixed? No, logic above is fine
-          // Re-enforce limit logic here if needed or separate
-          // Let's stick to the existing snippet logic structure but fixed constraints
-          // Actually the snippet above had this block:
-        }
-      }
-
-      // Re-apply max range check simply
-      if (newHigh - newLow > 800) {
-        if (dragging.current === 'low') {
-          // If moving low down expanded range > 800, cap low? 
-          // Logic is tricky. Let's simplify:
-          // Just pass the calculated values?
-          // The original code caped it.
-        }
-        if (dragging.current === "low") {
-          // We pulled low down too far
-          newHigh = newLow + 800; // Move high down? Or limit low?
-          // Typically range resize limits the HANDLE you are dragging.
-          // But original code:
-          // if (dragging.current === "low") newLow = newHigh - 800;
-          // Wait, if I drag LOW down, newLow decreases. Range increases. 
-          // If range > 800, set newLow to high - 800. Correct.
           newLow = newHigh - 800;
         } else {
-          // Dragging high up
           newHigh = newLow + 800;
         }
       }
@@ -334,25 +337,42 @@
       onChange({ low: newLow, high: newHigh });
     };
 
-    const handleMouseUp = () => {
+    const handleEnd = () => {
       dragging.current = null;
       if (bandRef.current) bandRef.current.style.opacity = "1";
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
+
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleEnd);
+      document.removeEventListener("touchmove", handleMove);
+      document.removeEventListener("touchend", handleEnd);
     };
 
-    const handleBandMouseDown = (e) => {
+    const startDrag = (e, type) => {
+      // Ignore if clicking handle when we meant band, handled by stopPropagation usually
+      // But simpler to just separate handlers or use unified one.
+      // Let's keep separate "binders" but unified logic
+    };
+
+    const handleBandStart = (e) => {
       if (e.target.classList.contains("range-handle") || e.target.closest(".range-handle")) {
         return;
       }
+      // Prevent Default on Touch to stop scrolling/refresh
+      if (e.touches) e.preventDefault();
+      if (e.type === 'mousedown') {
+        e.preventDefault(); // Stop text selection
+      }
+
       dragging.current = "band";
-      dragStartY.current = e.clientY;
+      dragStartY.current = getClientY(e);
       dragStartLow.current = validLow;
       dragStartHigh.current = validHigh;
 
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-      e.preventDefault();
+      document.addEventListener("mousemove", handleMove);
+      document.addEventListener("mouseup", handleEnd);
+      document.addEventListener("touchmove", handleMove, { passive: false });
+      document.addEventListener("touchend", handleEnd);
+
       e.stopPropagation();
 
       if (bandRef.current) {
@@ -360,22 +380,29 @@
       }
     };
 
-    const handleHandleMouseDown = (handleType) => (e) => {
+    const handleHandleStart = (handleType) => (e) => {
+      if (e.touches) e.preventDefault();
+      if (e.type === 'mousedown') e.preventDefault();
+
       dragging.current = handleType;
-      dragStartY.current = e.clientY;
+      dragStartY.current = getClientY(e);
       dragStartLow.current = validLow;
       dragStartHigh.current = validHigh;
 
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-      e.preventDefault();
+      document.addEventListener("mousemove", handleMove);
+      document.addEventListener("mouseup", handleEnd);
+      document.addEventListener("touchmove", handleMove, { passive: false });
+      document.addEventListener("touchend", handleEnd);
+
       e.stopPropagation();
     };
 
     useEffect(() => {
       return () => {
-        document.removeEventListener("mousemove", handleMouseMove);
-        document.removeEventListener("mouseup", handleMouseUp);
+        document.removeEventListener("mousemove", handleMove);
+        document.removeEventListener("mouseup", handleEnd);
+        document.removeEventListener("touchmove", handleMove);
+        document.removeEventListener("touchend", handleEnd);
       };
     }, []);
 
@@ -406,6 +433,46 @@
       "div",
       { className: "range-overlay", ref: overlayRef },
       [
+        // Inverted Masks (Unselected Areas)
+        // Constrained to GRID AREA only (excluding padding)
+        h("div", {
+          key: "mask-top",
+          className: "range-mask mask-top",
+          style: {
+            top: `${paddingTopPct}%`, // Start at grid top
+            height: `${Math.max(0, finalTop - paddingTopPct)}%`, // Height is distance to band top
+            left: paddingLeftPctStr,
+            right: paddingRightPctStr,
+          }
+        }),
+        h("div", {
+          key: "mask-bottom",
+          className: "range-mask mask-bottom",
+          style: {
+            top: `${finalBottom}%`,
+            height: `${Math.max(0, (100 - paddingBottomPct) - finalBottom)}%`, // Height is distance to grid bottom
+            left: paddingLeftPctStr,
+            right: paddingRightPctStr,
+          }
+        }),
+
+        // Inner Grid Border (Frames the chart area, excludes axes)
+        h("div", {
+          key: "grid-border",
+          style: {
+            position: "absolute",
+            top: `${paddingTopPct}%`,
+            bottom: `${paddingBottomPct}%`,
+            left: paddingLeftPctStr,
+            right: paddingRightPctStr,
+            border: "1px solid rgba(255, 255, 255, 0.3)",
+            borderRadius: "4px",
+            pointerEvents: "none",
+            zIndex: 50
+          }
+        }),
+
+        // The Band (Selected Window - Now Transparent)
         h("div", {
           key: "band",
           ref: bandRef,
@@ -418,7 +485,8 @@
             right: paddingRightPctStr,
             width: 'auto'
           },
-          onMouseDown: handleBandMouseDown,
+          onMouseDown: handleBandStart,
+          onTouchStart: handleBandStart
         }),
         h("div", {
           key: "handle-low",
@@ -428,7 +496,8 @@
             left: paddingLeftPctStr,
             right: paddingRightPctStr,
           },
-          onMouseDown: handleHandleMouseDown("low"),
+          onMouseDown: handleHandleStart("low"),
+          onTouchStart: handleHandleStart("low")
         }),
         h("div", {
           key: "handle-high",
@@ -438,7 +507,8 @@
             left: paddingLeftPctStr,
             right: paddingRightPctStr,
           },
-          onMouseDown: handleHandleMouseDown("high"),
+          onMouseDown: handleHandleStart("high"),
+          onTouchStart: handleHandleStart("high")
         }),
       ]
     );
@@ -609,9 +679,32 @@
       // Multiplier = Payout / Bet
       const targetMultiplier = targetPayout / activeBet;
 
-      // Multiplier = 0.85 / (Size / 1000) = 850 / Size
-      // Size = 850 / Multiplier
+      // Constraint: Size = 850 / Multiplier
       let newSize = Math.round(850 / targetMultiplier);
+
+      // OPTIMIZER: Check neighbors for better precision
+      // We want the size that yields a payout closest to targetPayout
+      // after the full round-trip logic (tick -> prob -> multiplier(2dp) -> payout)
+      const calcPayout = (s) => {
+        if (s <= 0) return 0;
+        const p = s / TICKS;
+        const m = Number((0.85 / p).toFixed(2));
+        return Number((activeBet * m).toFixed(2));
+      };
+
+      const candidates = [newSize, newSize - 1, newSize + 1];
+      let bestSize = newSize;
+      let minDiff = Math.abs(calcPayout(newSize) - targetPayout);
+
+      candidates.forEach(s => {
+        if (s < 10 || s > 800) return; // Skip invalid
+        const diff = Math.abs(calcPayout(s) - targetPayout);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestSize = s;
+        }
+      });
+      newSize = bestSize;
 
       let warning = null;
 

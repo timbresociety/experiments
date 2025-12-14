@@ -158,7 +158,7 @@ a {
   background: var(--panel);
 }
 
-/* Range Overlay (Pink Brand) */
+/* Range Overlay (Pink Brand & Liquid Glass) */
 .range-overlay {
   position: absolute;
   inset: 0;
@@ -166,27 +166,50 @@ a {
   z-index: 10;
 }
 
+/* New: Unselected Area Masks (Blur + Dim) */
+.range-mask {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.12);
+  /* Dim unselected */
+  backdrop-filter: blur(4px);
+  /* Blur unselected */
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 5;
+  /* Below handles/band */
+  pointer-events: none;
+  /* Let clicks pass through (or capture if we wanted range-drag-anywhere) */
+  transition: height 0.1s linear, top 0.1s linear;
+  /* Smooth visual updates */
+}
+
+/* The Selected Band (Now a Clear Window) */
 .range-overlay .band {
   position: absolute;
   /* Left/Right defined in JS */
-  background: rgba(236, 72, 153, 0.15);
-  /* RESTORED: High Contrast White Borders */
-  border-top: 2px solid #ffffff;
-  border-bottom: 2px solid #ffffff;
-  border-left: none;
-  border-right: none;
+  background: transparent;
+  /* Clear Window */
+
+  /* Retain Borders for Frame */
+  border-top: 1px solid rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.9);
+
+  /* Subtle inner glow to define the active zone edges? */
+  box-shadow:
+    inset 0 0 15px rgba(236, 72, 153, 0.1);
+
   pointer-events: auto;
   cursor: move;
-  transition: background 0.2s ease, border-color 0.2s ease;
   z-index: 10;
 }
 
 .range-overlay .band:hover {
-  background: rgba(236, 72, 153, 0.25);
+  /* Slight highlight on hover to show interaction availability */
+  background: rgba(255, 255, 255, 0.03);
+  border-color: #fff;
 }
 
 .range-overlay .band:active {
-  opacity: 1;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .range-handle {
@@ -209,33 +232,43 @@ a {
   transform: scaleY(1.1);
 }
 
-/* Specific offsets for Left/Right handles if needed, 
-   but translate(-50%) usually handles the centering on the 'left' or 'right' edge provided they are 0-positioned relative to the band? 
-   No, the handles are absolutely positioned on the graph container.
-   The JS positions them at `left` and `right`.
-   So `left: X%` means the left edge of the handle is at X%.
-   To center it, we need `transform: translateX(-50%)`.
-*/
-
+/* Liquid Handle Capsule */
 .range-handle::after {
   content: "";
   display: block;
-  width: 32px;
-  /* Capsule width */
-  height: 8px;
-  background: #ec4899;
-  /* Deep Pink */
-  border: 2px solid #ffffff;
-  /* White Border */
+  width: 42px;
+  height: 12px;
   border-radius: 99px;
-  /* Capsule shape */
-  box-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
-  transition: transform 0.1s;
+
+  /* Glass Base */
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+
+  /* Frosted Border */
+  border: 1px solid rgba(255, 255, 255, 0.6);
+
+  /* Deep Pink Inner glow */
+  box-shadow:
+    inset 0 0 10px rgba(236, 72, 153, 0.5),
+    0 4px 10px rgba(0, 0, 0, 0.2);
+
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.range-handle:hover::after {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #fff;
+  width: 50px;
+  /* Expand slightly on hover */
+  box-shadow:
+    inset 0 0 15px rgba(236, 72, 153, 0.8),
+    0 0 15px rgba(236, 72, 153, 0.4);
 }
 
 .range-handle:active::after {
-  transform: scale(1.1);
-  background: #ff5db5;
+  background: rgba(236, 72, 153, 0.4);
+  transform: scale(0.95);
 }
 
 .graph-header {
@@ -392,13 +425,16 @@ a {
   -webkit-backdrop-filter: blur(12px);
   padding: 0;
   overflow: hidden;
-  border: none;
+  /* UPDATED: Reserve border space for animation visibility */
+  border: 2px solid transparent;
 
   /* 3D Bevels & Depth */
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     inset 0 -1px 0 rgba(0, 0, 0, 0.4),
     0 10px 40px rgba(0, 0, 0, 0.4);
+
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
 }
 
 /* Subtle Ambient Glow for Graph */
@@ -594,10 +630,47 @@ a {
 @media (max-width: 800px) {
   .grid {
     grid-template-columns: 1fr;
+    gap: 24px;
   }
 
   .history-tape {
     padding: 10px;
+  }
+}
+
+@media (max-width: 600px) {
+  .shell {
+    padding: 20px 16px 80px;
+  }
+
+  .graph-shell {
+    height: auto !important;
+    aspect-ratio: 560 / 300;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .header>div {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .title {
+    font-size: 24px;
+  }
+
+  .wallet-pill {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .nav-tabs {
+    margin-left: 0;
+    font-size: 14px;
   }
 }
 
@@ -606,6 +679,23 @@ a {
   height: 100%;
   display: block;
   font-size: 0;
+  overflow: hidden;
+  /* Fix spillover */
+  border-radius: 20px;
+  /* Match card radius for clean clip */
+  position: relative;
+  /* Ensure ::after is positioned relative to this */
+}
+
+.graph-wrapper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* border: 1px solid rgba(255, 255, 255, 0.5); Removed global border */
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 50;
+  /* Above RangeOverlay (z=10) */
 }
 
 /* History Tape */
@@ -753,17 +843,30 @@ a {
 @keyframes pulse-win {
   0% {
     transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.4);
+    box-shadow: 0 0 0 0 rgba(39, 174, 96, 0);
+    border-color: transparent;
+    background-color: rgba(255, 255, 255, 0.02);
   }
 
-  50% {
+  10% {
     transform: scale(1.02);
-    box-shadow: 0 0 0 10px rgba(39, 174, 96, 0);
+    /* Bright Green Flash */
+    box-shadow: 0 0 30px rgba(39, 174, 96, 0.6), inset 0 0 20px rgba(39, 174, 96, 0.4);
+    border-color: var(--success);
+    background-color: rgba(39, 174, 96, 0.15);
+  }
+
+  80% {
+    transform: scale(1.01);
+    border-color: var(--success);
+    box-shadow: 0 0 10px rgba(39, 174, 96, 0.2);
   }
 
   100% {
     transform: scale(1);
     box-shadow: 0 0 0 0 rgba(39, 174, 96, 0);
+    border-color: transparent;
+    background-color: rgba(255, 255, 255, 0.02);
   }
 }
 
@@ -772,6 +875,8 @@ a {
   0%,
   100% {
     transform: translateX(0);
+    border-color: transparent;
+    background-color: rgba(255, 255, 255, 0.02);
   }
 
   10%,
@@ -780,6 +885,9 @@ a {
   70%,
   90% {
     transform: translateX(-4px);
+    border-color: var(--danger);
+    box-shadow: 0 0 20px rgba(253, 79, 79, 0.3), inset 0 0 15px rgba(253, 79, 79, 0.2);
+    background-color: rgba(253, 79, 79, 0.1);
   }
 
   20%,
@@ -787,6 +895,7 @@ a {
   60%,
   80% {
     transform: translateX(4px);
+    border-color: var(--danger);
   }
 }
 
@@ -818,7 +927,8 @@ a {
 }
 
 .anim-win {
-  animation: pulse-win 0.6s ease-out;
+  animation: pulse-win 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  /* Force colors during animation */
   border-color: var(--success) !important;
 }
 
