@@ -29,25 +29,34 @@
     return h("span", { className: `badge ${info.className}` }, info.label);
   };
 
+  /*
+     Shared Layout Constants
+     GRAPH_PADDING: Reverted for Vertical Overlay (Top 20px)
+  */
+  const GRAPH_PADDING = { top: 20, right: 60, bottom: 70, left: 30 }; // Increased bottom padding to 70
+  const GRAPH_WIDTH = 560;
+  const GRAPH_HEIGHT = 300;
+
   const LineGraph = ({ data }) => {
-    const width = 560;
-    const height = 300;
-    const padding = { top: 20, right: 50, bottom: 30, left: 10 };
+    // Canvas dimensions
+    const width = GRAPH_WIDTH;
+    const height = GRAPH_HEIGHT;
+    const padding = GRAPH_PADDING;
     const graphWidth = width - padding.left - padding.right;
     const graphHeight = height - padding.top - padding.bottom;
-    
+
     const maxVal = TICKS;
-    const minVal = 1;
-    const span = Math.max(maxVal - minVal, 1);
-    
+    const minVal = 0;
+    const span = maxVal - minVal;
+
+    // Helper: Scale X/Y
+    const scaleX = (i) => padding.left + (i / Math.max(data.length - 1, 1)) * graphWidth;
+    const scaleY = (val) => padding.top + graphHeight - ((val - minVal) / span) * graphHeight;
+
     const points = useMemo(() => {
       if (!data.length) return "";
       return data
-        .map((value, idx) => {
-          const x = padding.left + (idx / Math.max(data.length - 1, 1)) * graphWidth;
-          const y = padding.top + graphHeight - ((value - minVal) / span) * graphHeight;
-          return `${x.toFixed(2)},${y.toFixed(2)}`;
-        })
+        .map((value, idx) => `${scaleX(idx).toFixed(2)},${scaleY(value).toFixed(2)}`)
         .join(" ");
     }, [data, graphWidth, graphHeight]);
 
@@ -55,178 +64,149 @@
       return h("div", { className: "graph-empty" }, "Waiting for ticks...");
     }
 
-    const last = data[data.length - 1];
-    const gridLines = 5;
+    // Explicit Grid Lines for Alignment
+    const gridYCount = 5; // 0, 200, 400, 600, 800, 1000
+    const gridYLines = [];
     const priceLabels = [];
-    const tickLabels = [];
 
-    // Generate grid lines and price labels
-    for (let i = 0; i <= gridLines; i++) {
-      const price = minVal + (span * i) / gridLines;
-      const y = padding.top + graphHeight - ((price - minVal) / span) * graphHeight;
+    for (let i = 0; i <= gridYCount; i++) {
+      const value = (i / gridYCount) * maxVal;
+      const y = scaleY(value);
+
+      // Horizontal Line
+      gridYLines.push(
+        h("line", {
+          key: `grid-y-${i}`,
+          x1: padding.left,
+          y1: y,
+          x2: width - padding.right,
+          y2: y,
+          stroke: "rgba(255, 255, 255, 0.05)",
+          strokeWidth: "1"
+        })
+      );
+
+      // Price Label
       priceLabels.push(
         h("text", {
-          key: `price-${i}`,
-          x: width - padding.right + 8,
-          y: y + 4,
-          fill: "#6b7280",
+          key: `label-y-${i}`,
+          x: width - padding.right + 12,
+          y: y + 4, // Center vertically roughly
+          fill: "rgba(255,255,255,0.4)",
           fontSize: "11",
+          fontWeight: "500",
+          fontFamily: "Outfit",
           textAnchor: "start",
-        }, Math.round(price))
+        }, Math.round(value))
       );
     }
 
-    // Generate tick labels on X-axis
+    const gridXLines = [];
+    const tickLabels = [];
+
+    // Vertical Lines matching data points exactly
     for (let i = 0; i < data.length; i++) {
-      const x = padding.left + (i / Math.max(data.length - 1, 1)) * graphWidth;
+      const x = scaleX(i);
+
+      // Vertical Line
+      gridXLines.push(
+        h("line", {
+          key: `grid-x-${i}`,
+          x1: x,
+          y1: padding.top,
+          x2: x,
+          y2: height - padding.bottom,
+          stroke: "rgba(255, 255, 255, 0.05)",
+          strokeWidth: "1",
+          strokeDasharray: "4 4" // Dashed for X axis
+        })
+      );
+
+      // Tick Label
       tickLabels.push(
         h("text", {
           key: `tick-${i}`,
           x: x,
-          y: height - padding.bottom + 18,
-          fill: "#6b7280",
+          y: height - padding.bottom + 24,
+          fill: "rgba(255,255,255,0.3)",
           fontSize: "10",
+          fontFamily: "Outfit",
           textAnchor: "middle",
         }, i === data.length - 1 ? "Now" : `T${i + 1}`)
       );
     }
 
-    return h(
-      "svg",
-      {
-        width: "100%",
-        height: "100%",
-        viewBox: `0 0 ${width} ${height}`,
-        className: "tradingview-chart",
-      },
-      [
-        h(
-          "defs",
-          { key: "defs" },
-          [
-            h(
-              "linearGradient",
-              { id: "lineGradient", x1: "0%", x2: "100%" },
-              [
-                h("stop", { offset: "0%", stopColor: "#FC72FF", key: "s1" }),
-                h("stop", { offset: "100%", stopColor: "#FC72FF", key: "s2" }),
-              ]
-            ),
-            h(
-              "linearGradient",
-              { id: "areaGradient", x1: "0%", x2: "0%", y1: "0%", y2: "100%" },
-              [
-                h("stop", {
-                  offset: "0%",
-                  stopColor: "rgba(252, 114, 255, 0.2)",
-                  key: "sa1",
-                }),
-                h("stop", {
-                  offset: "100%",
-                  stopColor: "rgba(252, 114, 255, 0.02)",
-                  key: "sa2",
-                }),
-              ]
-            ),
-          ]
-        ),
-        // Horizontal grid lines
-        Array.from({ length: gridLines + 1 }).map((_, i) => {
-          const price = minVal + (span * i) / gridLines;
-          const y = padding.top + graphHeight - ((price - minVal) / span) * graphHeight;
-          return h("line", {
-            key: `grid-h-${i}`,
-            x1: padding.left,
-            y1: y,
-            x2: width - padding.right,
-            y2: y,
-            stroke: i === gridLines ? "#374151" : "#1f2937",
-            strokeWidth: i === gridLines ? "1.5" : "1",
-            strokeDasharray: i === gridLines ? "none" : "2 2",
-          });
-        }),
-        // Vertical grid lines
-        Array.from({ length: data.length }).map((_, i) => {
-          const x = padding.left + (i / Math.max(data.length - 1, 1)) * graphWidth;
-          return h("line", {
-            key: `grid-v-${i}`,
-            x1: x,
-            y1: padding.top,
-            x2: x,
-            y2: height - padding.bottom,
-            stroke: "#1f2937",
-            strokeWidth: "1",
-            strokeDasharray: "2 2",
-          });
-        }),
-        // Area fill
-        h("polyline", {
-          key: "area",
-          points: `${padding.left},${height - padding.bottom} ${points} ${width - padding.right},${height - padding.bottom}`,
-          fill: "url(#areaGradient)",
-          stroke: "none",
-        }),
-        // Main line
-        h("polyline", {
-          key: "line",
-          points,
-          fill: "none",
-          stroke: "#FC72FF",
-          strokeWidth: "2.5",
-          strokeLinejoin: "round",
-          strokeLinecap: "round",
-        }),
-        // Data points
-        points.split(" ").map((p, idx) => {
-          const [x, y] = p.split(",").map(Number);
-          const isLast = idx === data.length - 1;
-          return h("circle", {
-            key: `pt-${idx}`,
-            cx: x,
-            cy: y,
-            r: isLast ? 4 : 2.5,
-            fill: isLast ? "#FC72FF" : "#FC72FF",
-            opacity: isLast ? 1 : 0.6,
-            stroke: isLast ? "#fff" : "none",
-            strokeWidth: isLast ? "1.5" : "0",
-          });
-        }),
-        // Price labels on right
-        ...priceLabels,
-        // Tick labels on bottom
-        ...tickLabels,
-        // Current price indicator
-        h(
-          "text",
-          {
-            key: "current-price",
-            x: width - padding.right + 8,
-            y: padding.top - 8,
-            textAnchor: "start",
-            fill: "#FC72FF",
-            fontSize: "13",
-            fontWeight: "600",
-          },
-          `Price: ${last}`
-        ),
-      ]
-    );
-  };
-
-  const RangeBar = ({ low, high }) => {
-    const left = (low / TICKS) * 100;
-    const right = (high / TICKS) * 100;
-    return h(
-      "div",
-      { className: "range-bar" },
-      h("div", {
-        className: "range-highlight",
-        style: {
-          left: `${left}%`,
-          width: `${Math.max(right - left, 1)}%`,
+    return h("div", { className: "graph-wrapper" }, [
+      h(
+        "svg",
+        {
+          width: "100%",
+          height: "100%",
+          viewBox: `0 0 ${width} ${height}`,
+          preserveAspectRatio: "none",
+          className: "tradingview-chart",
+          style: { overflow: 'visible' }
         },
-      })
-    );
+        [
+          h("defs", { key: "defs" }, [
+            // Gradients definitions...
+            h("linearGradient", { id: "areaGradient", x1: "0%", y1: "0%", x2: "0%", y2: "100%" }, [
+              h("stop", { offset: "0%", stopColor: "rgba(236, 72, 153, 0.2)" }),
+              h("stop", { offset: "100%", stopColor: "rgba(236, 72, 153, 0)" })
+            ]),
+            h("filter", { id: "glow", x: "-50%", y: "-50%", width: "200%", height: "200%" }, [
+              h("feGaussianBlur", { stdDeviation: "3", result: "coloredBlur" }),
+              h("feMerge", { key: "m" }, [
+                h("feMergeNode", { in: "coloredBlur" }),
+                h("feMergeNode", { in: "SourceGraphic" })
+              ])
+            ])
+          ]),
+
+          // Render Grid First (Behind)
+          ...gridYLines,
+          ...gridXLines,
+
+          // Area Fill
+          h("polyline", {
+            key: "area",
+            points: `${padding.left},${height - padding.bottom} ${points} ${width - padding.right},${height - padding.bottom}`,
+            fill: "url(#areaGradient)",
+            stroke: "none",
+          }),
+
+          // Main Line
+          h("polyline", {
+            key: "line",
+            points,
+            fill: "none",
+            stroke: "#ec4899",
+            strokeWidth: "3",
+            strokeLinejoin: "round",
+            strokeLinecap: "round",
+            style: { filter: "url(#glow)" }
+          }),
+
+          // Data Points
+          points.split(" ").map((p, idx) => {
+            const [x, y] = p.split(",").map(Number);
+            const isLast = idx === data.length - 1;
+            return h("circle", {
+              key: `pt-${idx}`,
+              cx: x, cy: y,
+              r: isLast ? 6 : 3,
+              fill: isLast ? "#ffffff" : "#ec4899",
+              stroke: isLast ? "#3b82f6" : "none",
+              strokeWidth: isLast ? "3" : "0",
+              style: isLast ? { filter: "url(#glow)", animation: "pulse-dot 2s infinite" } : {},
+            });
+          }),
+
+          ...priceLabels,
+          ...tickLabels,
+        ]
+      )
+    ]);
   };
 
   const RangeOverlay = ({ low, high, onChange }) => {
@@ -238,129 +218,143 @@
     const dragStartHigh = useRef(0);
 
     // Strictly clamp incoming values to valid range
-    const clampedLow = clamp(low, 1, TICKS);
-    const clampedHigh = clamp(high, 1, TICKS);
+    const clampedLow = clamp(low, 0, TICKS); // Allow 0
+    const clampedHigh = clamp(high, 1, TICKS); // Keep high at least 1? Yes, span >= 1
     const validLow = Math.min(clampedLow, clampedHigh - 1);
     const validHigh = Math.max(clampedHigh, validLow + 1);
 
     // Ensure values are always valid on mount/update
     useEffect(() => {
       if (low !== validLow || high !== validHigh) {
-        // Only update if significantly different to avoid loops
         if (Math.abs(low - validLow) > 0 || Math.abs(high - validHigh) > 0) {
           onChange({ low: validLow, high: validHigh });
         }
       }
-    }, []);
+    }, [low, high, validLow, validHigh, onChange]);
 
     const pctY = (val) => 100 - (val / TICKS) * 100;
 
-    // Account for graph padding: top 20px, bottom 30px out of 300px height
-    const paddingTopPx = 20;
-    const paddingBottomPx = 30;
-    const graphHeightPx = 300;
+    // USE SHARED CONSTANTS FOR PERFECT ALIGNMENT (PERCENTAGES)
+    const { top: paddingTopPx, bottom: paddingBottomPx, left: paddingLeftPx, right: paddingRightPx } = GRAPH_PADDING;
+    const graphHeightPx = GRAPH_HEIGHT;
+    const graphWidthPx = GRAPH_WIDTH;
+
+    // Convert Px to % for Responsive Overlay
+    const paddingLeftPctStr = `${(paddingLeftPx / graphWidthPx) * 100}%`;
+    const paddingRightPctStr = `${(paddingRightPx / graphWidthPx) * 100}%`;
 
     const handleMouseMove = (e) => {
       if (!dragging.current || !overlayRef.current) return;
-      
+
       const rect = overlayRef.current.getBoundingClientRect();
       const mouseY = e.clientY - rect.top;
-      
+
       // Constrain to graph area (accounting for padding)
-      const minY = paddingTopPx;
-      const maxY = graphHeightPx - paddingBottomPx;
-      const graphAreaHeight = maxY - minY;
+      const minY = (paddingTopPx / graphHeightPx) * rect.height; // Scale to actual client height
+      const maxY = rect.height - (paddingBottomPx / graphHeightPx) * rect.height;
+
+      // Fallback if rect is 0?
+      if (rect.height === 0) return;
+
       const constrainedY = clamp(mouseY, minY, maxY);
-      
-      const ratio = (constrainedY - paddingTopPx) / graphAreaHeight; // 0 top, 1 bottom
-      const tick = clamp(Math.round((1 - ratio) * TICKS), 1, TICKS);
-      
+      // Determine ratio within the "active graph area"
+      const graphAreaHeight = maxY - minY;
+      const ratio = (constrainedY - minY) / graphAreaHeight;
+
+      // Calculate tick from ratio (0 at bottom, TICKS at top)
+      // range 0 to TICKS
+      const tick = clamp(Math.round((1 - ratio) * TICKS), 0, TICKS); // Allow 0
+
+      let newLow = validLow;
+      let newHigh = validHigh;
+
       if (dragging.current === "band") {
-        // Reduce sensitivity - only update if moved at least 2 pixels
         const deltaY = e.clientY - dragStartY.current;
-        if (Math.abs(deltaY) < 2) return; // Dead zone to reduce sensitivity
-        
-        // Calculate tick delta more carefully
-        const deltaTick = Math.round((deltaY / graphAreaHeight) * TICKS);
+        if (Math.abs(deltaY) < 2) return;
+
+        // Delta tick based on percentage of movement
+        const deltaRatio = deltaY / graphAreaHeight;
+        const deltaTick = Math.round(deltaRatio * TICKS);
         const span = dragStartHigh.current - dragStartLow.current;
-        
-        // Calculate new positions
-        let newLow = dragStartLow.current - deltaTick;
-        let newHigh = newLow + span;
-        
-        // BULLETPROOF: Strictly constrain to valid range
-        // First ensure span is valid
-        const validSpan = Math.max(1, Math.min(span, TICKS - 1));
-        
-        // Calculate bounds
+
+        newLow = dragStartLow.current - deltaTick;
+        newHigh = newLow + span;
+
+        const validSpan = Math.max(1, Math.min(span, TICKS)); // Span can be TICKS (0-1000)
         const maxLow = TICKS - validSpan;
-        const minHigh = 1 + validSpan;
-        
-        // Clamp low first
-        newLow = clamp(newLow, 1, maxLow);
-        // Then set high based on low
+
+        newLow = clamp(newLow, 0, maxLow); // Allow 0
         newHigh = newLow + validSpan;
-        // Double-check high is within bounds
-        if (newHigh > TICKS) {
-          newHigh = TICKS;
-          newLow = newHigh - validSpan;
-          newLow = clamp(newLow, 1, TICKS);
-        }
-        if (newLow < 1) {
-          newLow = 1;
-          newHigh = newLow + validSpan;
-          newHigh = clamp(newHigh, 1, TICKS);
-        }
-        
-        // Final absolute validation
-        const finalLow = Math.max(1, Math.min(newLow, TICKS - 1));
-        const finalHigh = Math.max(finalLow + 1, Math.min(newHigh, TICKS));
-        
-        // Only update if values are valid
-        if (finalLow >= 1 && finalLow < finalHigh && finalHigh <= TICKS) {
-          onChange({ low: finalLow, high: finalHigh });
-        }
+
       } else if (dragging.current === "low") {
-        // BULLETPROOF: Clamp low handle
         const maxLow = Math.min(validHigh - 1, TICKS - 1);
-        const constrainedTick = Math.max(1, Math.min(tick, maxLow));
-        const newHigh = Math.max(constrainedTick + 1, Math.min(validHigh, TICKS));
-        onChange({ low: constrainedTick, high: newHigh });
+        const constrainedTick = Math.max(0, Math.min(tick, maxLow)); // Allow 0
+        newLow = constrainedTick;
+        newHigh = Math.max(constrainedTick + 1, Math.min(validHigh, TICKS));
+
       } else if (dragging.current === "high") {
-        // BULLETPROOF: Clamp high handle
-        const minHigh = Math.max(validLow + 1, 2);
+        const minHigh = Math.max(validLow + 1, 1); // High must be > low (>=0) so >=1
         const constrainedTick = Math.max(minHigh, Math.min(tick, TICKS));
-        const newLow = Math.max(1, Math.min(validLow, constrainedTick - 1));
-        onChange({ low: newLow, high: constrainedTick });
+        newHigh = constrainedTick;
+        newLow = Math.max(0, Math.min(validLow, constrainedTick - 1)); // Allow 0
       }
+
+      if (newHigh - newLow > 800) {
+        if (dragging.current === "low") {
+          newLow = newHigh - 800; // Recalc low if high is fixed? No, logic above is fine
+          // Re-enforce limit logic here if needed or separate
+          // Let's stick to the existing snippet logic structure but fixed constraints
+          // Actually the snippet above had this block:
+        }
+      }
+
+      // Re-apply max range check simply
+      if (newHigh - newLow > 800) {
+        if (dragging.current === 'low') {
+          // If moving low down expanded range > 800, cap low? 
+          // Logic is tricky. Let's simplify:
+          // Just pass the calculated values?
+          // The original code caped it.
+        }
+        if (dragging.current === "low") {
+          // We pulled low down too far
+          newHigh = newLow + 800; // Move high down? Or limit low?
+          // Typically range resize limits the HANDLE you are dragging.
+          // But original code:
+          // if (dragging.current === "low") newLow = newHigh - 800;
+          // Wait, if I drag LOW down, newLow decreases. Range increases. 
+          // If range > 800, set newLow to high - 800. Correct.
+          newLow = newHigh - 800;
+        } else {
+          // Dragging high up
+          newHigh = newLow + 800;
+        }
+      }
+
+      onChange({ low: newLow, high: newHigh });
     };
 
     const handleMouseUp = () => {
       dragging.current = null;
+      if (bandRef.current) bandRef.current.style.opacity = "1";
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
-      if (bandRef.current) {
-        bandRef.current.style.opacity = "";
-      }
     };
 
     const handleBandMouseDown = (e) => {
-      // Don't start band drag if clicking on a handle
-      if (e.target.classList.contains("range-handle") || 
-          e.target.closest(".range-handle")) {
+      if (e.target.classList.contains("range-handle") || e.target.closest(".range-handle")) {
         return;
       }
-      
       dragging.current = "band";
       dragStartY.current = e.clientY;
       dragStartLow.current = validLow;
       dragStartHigh.current = validHigh;
-      
+
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
       e.preventDefault();
       e.stopPropagation();
-      
+
       if (bandRef.current) {
         bandRef.current.style.opacity = "0.7";
       }
@@ -371,7 +365,7 @@
       dragStartY.current = e.clientY;
       dragStartLow.current = validLow;
       dragStartHigh.current = validHigh;
-      
+
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
       e.preventDefault();
@@ -386,27 +380,25 @@
     }, []);
 
     // Use clamped values for positioning - BULLETPROOF bounds
+    // UPDATED: Allow 0 logic
     const safeHigh = Math.max(1, Math.min(validHigh, TICKS));
-    const safeLow = Math.max(1, Math.min(validLow, safeHigh - 1));
-    
+    const safeLow = Math.max(0, Math.min(validLow, safeHigh - 1)); // Allow 0
+
+
     const topPct = pctY(safeHigh);
     const bottomPct = pctY(safeLow);
     const paddingTopPct = (paddingTopPx / graphHeightPx) * 100;
     const paddingBottomPct = (paddingBottomPx / graphHeightPx) * 100;
     const graphHeightPct = 100 - paddingTopPct - paddingBottomPct;
-    
-    // Calculate positions and strictly clamp to graph bounds
+
     const topPosition = paddingTopPct + (topPct / 100) * graphHeightPct;
     const bottomPosition = paddingTopPct + (bottomPct / 100) * graphHeightPct;
-    
-    // BULLETPROOF: Ensure band stays within graph bounds - no spillover
+
     const minTop = paddingTopPct;
     const maxBottom = 100 - paddingBottomPct;
     const adjustedTop = Math.max(minTop, Math.min(topPosition, maxBottom));
     const adjustedBottom = Math.max(minTop, Math.min(bottomPosition, maxBottom));
-    const adjustedHeight = Math.max(Math.abs(adjustedBottom - adjustedTop), 0.5);
-    
-    // Ensure top is above bottom and within bounds
+
     const finalTop = Math.max(minTop, Math.min(Math.min(adjustedTop, adjustedBottom), maxBottom));
     const finalBottom = Math.max(minTop, Math.min(Math.max(adjustedTop, adjustedBottom), maxBottom));
 
@@ -422,24 +414,29 @@
             top: `${finalTop}%`,
             height: `${finalBottom - finalTop}%`,
             maxHeight: `${100 - paddingTopPct - paddingBottomPct}%`,
+            left: paddingLeftPctStr,
+            right: paddingRightPctStr,
+            width: 'auto'
           },
           onMouseDown: handleBandMouseDown,
         }),
         h("div", {
           key: "handle-low",
           className: "range-handle range-handle-low",
-          style: { 
-            top: `calc(${finalBottom}% - 4px)`,
-            maxTop: `${100 - paddingBottomPct}%`,
+          style: {
+            top: `calc(${finalBottom}% - 6px)`,
+            left: paddingLeftPctStr,
+            right: paddingRightPctStr,
           },
           onMouseDown: handleHandleMouseDown("low"),
         }),
         h("div", {
           key: "handle-high",
           className: "range-handle range-handle-high",
-          style: { 
-            top: `calc(${finalTop}% - 4px)`,
-            minTop: `${paddingTopPct}%`,
+          style: {
+            top: `calc(${finalTop}% - 6px)`,
+            left: paddingLeftPctStr,
+            right: paddingRightPctStr,
           },
           onMouseDown: handleHandleMouseDown("high"),
         }),
@@ -447,602 +444,453 @@
     );
   };
 
+
+
+  /* 
+     DEFI PREDICTION GAME
+     App Component - Implements Swap Interface & Range Logic
+  */
+  /*
+     DEFI PREDICTION GAME
+     History Tape Component
+  */
+  const HistoryTape = ({ history }) => {
+    // We only want the last 15, excluding the render init ones ideally, but raw history is fine
+    // We'll reverse it to show newest left/first
+    const show = [...history].reverse().slice(0, 20);
+    return h("div", { className: "history-tape" }, [
+      show.map((val, idx) =>
+        h("div", { key: idx, className: "history-chip" }, [
+          h("img", { src: "usdc.png", className: "mini-logo", key: "logo" }),
+          val
+        ])
+      )
+    ]);
+  };
+
+
+  /*
+     STATS VIEW COMPONENT
+  */
+  const StatsView = ({ bets, pnl }) => {
+    // Calculate Stats
+    const totalBets = bets.length;
+    const wins = bets.filter(b => b.result === 'win').length;
+    const winRate = totalBets > 0 ? ((wins / totalBets) * 100).toFixed(1) : 0;
+
+    return h("div", { className: "stats-view" }, [
+      // PnL Summary Cards
+      h("div", { className: "pnl-summary" }, [
+        h("div", { className: "stat-box" }, [
+          h("span", { className: "stat-label" }, "Session PnL"),
+          h("span", { className: "stat-value", style: { color: pnl >= 0 ? "#27ae60" : "#fd4f4f" } },
+            `${pnl >= 0 ? "+" : ""}${formatCurrency(pnl)} USDC`)
+        ]),
+        h("div", { className: "stat-box" }, [
+          h("span", { className: "stat-label" }, "Total Trades"),
+          h("span", { className: "stat-value" }, totalBets)
+        ]),
+        h("div", { className: "stat-box" }, [
+          h("span", { className: "stat-label" }, "Win Rate"),
+          h("span", { className: "stat-value" }, `${winRate}%`)
+        ])
+      ]),
+
+      // History Table
+      h("div", { className: "stats-card" }, [
+        h("h3", { style: { marginTop: 0, fontSize: "16px" } }, "Trade History"),
+        bets.length === 0
+          ? h("div", { style: { padding: "20px", textAlign: "center", color: "#666" } }, "No trades yet.")
+          : h("table", { className: "history-table" }, [
+            h("thead", {}, h("tr", {}, [
+              h("th", {}, "Result"),
+              h("th", {}, "Return"),
+              h("th", {}, "Bet"),
+              h("th", {}, "Payout"),
+              h("th", {}, "Range")
+            ])),
+            h("tbody", {}, bets.slice().reverse().map((bet, i) =>
+              h("tr", { key: i }, [
+                h("td", { className: bet.result === 'win' ? "win-text" : "loss-text" },
+                  bet.result.toUpperCase()),
+                h("td", {}, `${(bet.payout / bet.amount).toFixed(2)}x`),
+                h("td", {}, [
+                  h("span", {}, bet.amount),
+                  h("img", { src: "usdc.png", className: "mini-logo", style: { marginLeft: "4px" } })
+                ]),
+                h("td", { className: bet.payout > 0 ? "win-text" : "" }, [
+                  h("span", {}, bet.payout > 0 ? `+${bet.payout}` : "0"),
+                  h("img", { src: "usdc.png", className: "mini-logo", style: { marginLeft: "4px" } })
+                ]),
+                h("td", { style: { fontSize: "12px", color: "#666" } }, `${bet.range.low}-${bet.range.high}`)
+              ])
+            ))
+          ])
+      ])
+    ]);
+  };
+
+  /*
+     DEFI PREDICTION GAME
+     App Component - Implements Swap Interface & Range Logic
+  */
   const App = () => {
+    // Game State
     const [history, setHistory] = useState(initialHistory);
-    const [betAmount, setBetAmount] = useState(25);
     const [balance, setBalance] = useState(10000);
-    const [sessionStake, setSessionStake] = useState(0);
+
+    // Betting State
+    const [baseBet, setBaseBet] = useState(25);
+    const [currentBet, setCurrentBet] = useState(25);
+
     const [range, setRange] = useState({ low: 420, high: 620 });
     const [status, setStatus] = useState("idle");
-    const [streak, setStreak] = useState(0);
-    const [lastPrice, setLastPrice] = useState(null);
-    const [nextPrice, setNextPrice] = useState(null);
-    const [payout, setPayout] = useState(0);
-    const [message, setMessage] = useState(
-      "Pick your range and predict where the next tick will land."
-    );
-    const [showModal, setShowModal] = useState(false);
+    const [lastResult, setLastResult] = useState(null);
 
+    // Stats State
+    const [view, setView] = useState('game'); // 'game' | 'stats'
+    const [userBets, setUserBets] = useState([]); // History of rounds
+    const [sessionPnL, setSessionPnL] = useState(0);
+
+    // Animation State
+    const [animClass, setAnimClass] = useState("");
+
+    // Validation State
+    const [payError, setPayError] = useState(null); // For "You Pay" input
+    const [payoutError, setPayoutError] = useState(null); // For "You Receive" input
+
+    // Payout Editing State (for seamless UX)
+    const [isPayoutFocused, setIsPayoutFocused] = useState(false);
+    const [payoutInput, setPayoutInput] = useState("");
+
+    // Derived State
+    const [lastPrice, setLastPrice] = useState(null);
     useEffect(() => {
       setLastPrice(history[history.length - 1]);
-    }, []);
+    }, [history]);
 
+    // Multiplier Logic (85% RTP)
     const multiplier = useMemo(() => {
-      if (streak <= 0) return 1;
-      const raw = 1 + streak * 0.35;
-      return Number((raw * 0.85).toFixed(2)); // house edge 15%
-    }, [streak]);
+      const size = Math.max(1, range.high - range.low);
+      const probability = size / TICKS;
+      if (probability <= 0) return 0;
+      return Number((0.85 / probability).toFixed(2));
+    }, [range]);
 
-    const expectedMultiplier = useMemo(() => {
-      const span = Math.max(range.high - range.low + 1, 1);
-      const p = span / TICKS;
-      if (p <= 0) return 1;
-      const fair = 1 / p;
-      return Number((fair * 0.85).toFixed(2)); // apply 15% house edge
-    }, [range.high, range.low]);
+    const potentialPayout = useMemo(() => {
+      const activeBet = status === 'won_streak' ? currentBet : baseBet;
+      return Number((activeBet * multiplier).toFixed(2));
+    }, [currentBet, baseBet, multiplier, status]);
 
-    const setRangeSafe = (nextLow, nextHigh) => {
-      // BULLETPROOF validation for numeric inputs
-      let low = Math.max(1, Math.min(Math.round(nextLow || 1), TICKS));
-      let high = Math.max(1, Math.min(Math.round(nextHigh || 1), TICKS));
-      
-      // Ensure low < high
-      if (low >= high) {
-        if (low === TICKS) {
-          low = TICKS - 1;
-        } else {
-          high = low + 1;
-        }
+    // Sync payoutInput when not editing
+    useEffect(() => {
+      if (!isPayoutFocused) {
+        setPayoutInput(potentialPayout);
       }
-      
-      // Final validation
-      low = Math.max(1, Math.min(low, TICKS - 1));
+    }, [potentialPayout, isPayoutFocused]);
+
+    // Interaction Handlers
+    const handleRangeChange = (newRange) => {
+      // UPDATED: Allow 0 logic
+      let { low, high } = newRange;
+      low = Math.max(0, Math.min(low, TICKS - 1)); // Allow 0
       high = Math.max(low + 1, Math.min(high, TICKS));
-      
-      if (low >= 1 && low < high && high <= TICKS) {
-        setRange({ low, high });
-      }
+      setRange({ low, high });
     };
 
-    const handleRangeChange = (key) => (e) => {
-      // BULLETPROOF validation for input changes
-      let value = Math.max(1, Math.min(Math.round(Number(e.target.value || 1)), TICKS));
-      
-      setRange((prev) => {
-        let low = prev.low;
-        let high = prev.high;
-        
-        if (key === "low") {
-          low = value;
-          // Ensure low < high
-          if (low >= high) {
-            if (low === TICKS) {
-              low = TICKS - 1;
-            } else {
-              high = low + 1;
-            }
-          }
-        } else {
-          high = value;
-          // Ensure low < high
-          if (low >= high) {
-            if (high === 1) {
-              high = 2;
-            } else {
-              low = high - 1;
-            }
-          }
-        }
-        
-        // Final validation
-        low = Math.max(1, Math.min(low, TICKS - 1));
-        high = Math.max(low + 1, Math.min(high, TICKS));
-        
-        if (low >= 1 && low < high && high <= TICKS) {
-          return { low, high };
-        }
-        return prev; // Don't update if invalid
+    // Reverse Calculation for Payout Input
+    const handlePayoutChange = (val) => {
+      const targetPayout = Number(val);
+      const activeBet = status === 'won_streak' ? currentBet : baseBet;
+
+      if (!targetPayout || targetPayout <= 0 || activeBet <= 0) return;
+
+      // Formula: Payout = Bet * (0.85 / Probability)
+      // Multiplier = Payout / Bet
+      const targetMultiplier = targetPayout / activeBet;
+
+      // Multiplier = 0.85 / (Size / 1000) = 850 / Size
+      // Size = 850 / Multiplier
+      let newSize = Math.round(850 / targetMultiplier);
+
+      let warning = null;
+
+      // Constraints with Feedback
+      if (newSize < 10) {
+        newSize = 10;
+        warning = "Max Payout Limit (85x)";
+      } else if (newSize > 800) {
+        newSize = 800;
+        warning = "Min Payout Limit (Start with 80% range)";
+      }
+
+      setPayoutError(warning);
+
+      // Center the new size on current center
+      const currentCenter = Math.round((range.low + range.high) / 2);
+      let newLow = Math.round(currentCenter - (newSize / 2));
+      let newHigh = newLow + newSize;
+
+      // Boundary Checks
+      if (newLow < 1) {
+        newLow = 1;
+        newHigh = newLow + newSize;
+      }
+      if (newHigh > TICKS) {
+        newHigh = TICKS;
+        newLow = newHigh - newSize;
+      }
+
+      setRange({ low: newLow, high: newHigh });
+    };
+
+    // Game Logic
+    // Defined BEFORE playRound to avoid any const hoisting/TDZ issues
+    const finalizeRound = (betAmount) => {
+      const finalPrice = randomPrice();
+
+      setHistory(prev => {
+        const shift = prev.slice(1);
+        return [...shift, finalPrice];
       });
-    };
 
-  const takeTick = () => {
-      const price = randomPrice();
-      setNextPrice(price);
-      setHistory((prev) => {
-        const next = [...prev.slice(-(MAX_HISTORY - 1)), price];
-        setLastPrice(next[next.length - 1]);
-        return next;
-      });
-      return price;
-    };
+      const won = finalPrice >= range.low && finalPrice <= range.high;
+      // Note: betAmount is the snapshot of what was risked
 
-  const [rounds, setRounds] = useState([]);
+      if (won) {
+        const winAmount = Number((betAmount * multiplier).toFixed(2));
+        setCurrentBet(winAmount);
+        setStatus('won_streak');
+        setLastResult({ won: true, price: finalPrice });
+        setAnimClass("anim-win");
 
-  const onPredict = () => {
-      if (!betAmount || betAmount <= 0) {
-        setMessage("Enter a bet amount greater than zero.");
-        return;
-      }
-    if (streak === 0) {
-      if (betAmount > balance) {
-        setMessage("Insufficient balance for that bet.");
-        return;
-      }
-      setSessionStake(betAmount);
-      setBalance((prev) => prev - betAmount);
-    }
-      const price = takeTick();
-      const win = price >= range.low && price <= range.high;
-      if (win) {
-        const nextStreak = streak + 1;
-        setStreak(nextStreak);
-      const rawMult = 1 + nextStreak * 0.35;
-      const edgedMult = Number((rawMult * 0.85).toFixed(2));
-      setPayout(Number((sessionStake * edgedMult).toFixed(2)));
-        setStatus("playing");
-      setRounds((prev) => [
-        {
-          price,
-          result: "win",
-          multiplier: edgedMult,
-        },
-        ...prev,
-      ]);
-        setMessage(
-        `Nice read! Price landed at ${price}. Multiplier now x${edgedMult}.`
-        );
+        // DO NOT LOG INTERMEDIATE WINS ("Ride the Streak")
+        // We only log when the "Game" ends (Cashout or Loss)
+
       } else {
-        setStatus("lost");
-        setStreak(0);
-        setPayout(0);
-      setSessionStake(0);
-      setRounds((prev) => [
-        {
-          price,
-          result: "lose",
-          multiplier: 0,
-        },
-        ...prev,
-      ]);
-        setMessage(
-          `Price landed at ${price}. Outside your range. Try again—don't lose hope!`
-        );
+        // Log LOSS (EndOfSession)
+        setUserBets(prev => [...prev, {
+          result: 'loss',
+          price: finalPrice,
+          amount: baseBet, // The actual risk capital lost
+          payout: 0,
+          range: { ...range }
+        }]);
+
+        setCurrentBet(baseBet);
+        setStatus('idle');
+        setLastResult({ won: false, price: finalPrice });
+        setAnimClass("anim-loss");
       }
     };
 
-    const onCashout = () => {
-      if (status === "playing" && streak > 0) {
-      setBalance((prev) => prev + payout);
-        setStatus("cashed");
-        setMessage(
-          `You cashed out x${multiplier}. Claimed ${formatCurrency(
-            payout
-          )}.`
-        );
-      setStreak(0);
-      setSessionStake(0);
-      setPayout(0);
+    const playRound = () => {
+      const activeBet = status === 'won_streak' ? currentBet : baseBet;
+
+      if (activeBet <= 0) {
+        setPayError("Enter a valid bet amount");
+        return;
       }
+
+      if (status === 'idle') {
+        if (balance < activeBet) {
+          setPayError("Insufficient balance");
+          return;
+        }
+        setBalance(b => b - activeBet);
+        setCurrentBet(activeBet);
+        setSessionPnL(p => p - activeBet);
+      }
+
+      setPayError(null);
+      setPayoutError(null);
+      setStatus('playing');
+      setAnimClass("");
+
+      setTimeout(() => { finalizeRound(activeBet); }, 600);
     };
 
-    const onReset = () => {
-      const seed = initialHistory();
-      setHistory(seed);
-      setLastPrice(seed[seed.length - 1]);
-      setNextPrice(null);
-      setStatus("idle");
-      setStreak(0);
-      setPayout(0);
-    setSessionStake(0);
-    setRounds([]);
-      setMessage("Pick your range and predict where the next tick will land.");
+    const handleCashout = () => {
+      setBalance(b => b + currentBet);
+      setSessionPnL(p => p + currentBet); // Add winnings to PnL
+
+      // Log WIN (EndOfSession - Cashout)
+      setUserBets(prev => [...prev, {
+        result: 'win',
+        price: lastResult ? lastResult.price : 0, // Price of the LAST tick that allowed cashout
+        amount: baseBet, // Initial Investment
+        payout: currentBet, // Final Realized Value
+        range: { ...range }
+      }]);
+
+      setStatus('idle');
+      setCurrentBet(baseBet);
     };
 
-    const statusCopy = {
-      idle: "Awaiting your next prediction.",
-      playing: "Live streak—keep going or cash out.",
-      lost: "Price fell outside your range.",
-      cashed: "Session ended. Play again anytime.",
-    }[status];
 
-    return h(
-      React.Fragment,
-      null,
-      [
-        h(
-          "div",
-          { className: "shell" },
-          [
-            h(
-              "div",
-              { className: "header", key: "header" },
-              [
-                h("div", { key: "title-wrap" }, [
-                  h("div", { className: "title", key: "title" }, "Price Range Predictor"),
-                  h(
-                    "p",
-                    { className: "subtitle", key: "subtitle" },
-                    "Pick a band, watch 10 previous ticks, guess the next one, and ride the multiplier—cash out before you miss."
-                  ),
+    return h("div", { className: "shell" }, [
+      // Header
+      h("div", { className: "header", key: "header" }, [
+        h("div", { style: { display: "flex", alignItems: "center" } }, [
+          h("img", { src: "logo.svg", className: "app-logo", alt: "TickPredict" }),
+          h("div", { className: "title", key: "t" }, "TickPredict"),
+          // Navigation Tabs
+          h("div", { className: "nav-tabs" }, [
+            h("div", {
+              className: `nav-item ${view === 'game' ? 'active' : ''}`,
+              onClick: () => setView('game')
+            }, "Trade"),
+            h("div", {
+              className: `nav-item ${view === 'stats' ? 'active' : ''}`,
+              onClick: () => setView('stats')
+            }, "Stats")
+          ])
+        ]),
+        h("div", { className: "wallet-pill", key: "w" }, [
+          h("span", { style: { opacity: 0.6 } }, "BAL"),
+          h("div", { style: { display: "flex", alignItems: "center", gap: "6px" } }, [
+            formatCurrency(balance),
+            h("img", { src: "usdc.png", className: "mini-logo", alt: "USDC" }),
+            "USDC"
+          ])
+        ])
+      ]),
+
+      // View Switcher
+      view === 'stats'
+        ? h(StatsView, { bets: userBets, pnl: sessionPnL })
+        : [
+          // History Tape
+          h(HistoryTape, { history, key: "tape" }),
+
+          // Main Grid
+          h("div", { className: "grid", key: "g" }, [
+
+            // Left Column: Graph
+            h("div", { className: `card ${animClass}`, key: "gc" }, [ // Apply animation here
+              h("div", { className: "graph-header", key: "gh" }, [
+                h("span", { key: "l1", style: { fontSize: "13px", color: "#98a1c0" } },
+                  "Guess the next price • Shorter range = Higher win"
+                ),
+                h("span", { key: "l2", className: "chip", style: { display: 'flex', alignItems: 'center', gap: '6px' } }, [
+                  lastResult ? "Result:" : "Last:",
+                  h("span", { style: { fontWeight: 700, color: "#fff" } }, lastResult ? lastResult.price : lastPrice),
+                  h("img", { src: "usdc.png", className: "mini-logo" }),
+                ])
+              ]),
+              h("div", { className: "graph-shell", key: "gs" }, [
+                h("div", { className: "graph", key: "g-inner" }, h(LineGraph, { data: history })),
+                h(RangeOverlay, {
+                  key: "overlay",
+                  low: range.low,
+                  high: range.high,
+                  onChange: handleRangeChange
+                })
+              ])
+            ]),
+
+            // Right Column: Swap Interface
+            h("div", { className: "defi-card", key: "dc" }, [
+              // "You Pay" Section
+              h("div", { className: `swap-input-container ${payError ? 'input-error' : ''}`, key: "pay" }, [
+                h("div", { className: "swap-label-row" }, [
+                  h("span", {}, status === 'won_streak' ? "Accumulated Bet" : "You pay"),
+                  h("span", { className: "balance-label" }, `Balance: ${formatCurrency(balance)} USDC`)
                 ]),
-                h("span", { className: "pill", key: "pill" }, "Inspired by Uniswap range UI"),
-              ]
-            ),
+                h("div", { className: "swap-input-row" }, [
+                  h("input", {
+                    className: "token-input",
+                    type: "number",
+                    placeholder: "0",
+                    value: status === 'won_streak' ? currentBet : (baseBet === 0 ? '' : baseBet),
+                    onFocus: e => e.target.select(),
+                    onChange: e => {
+                      if (status === 'idle') {
+                        const valStr = e.target.value;
+                        const val = Number(valStr);
+                        setBaseBet(val);
 
-            h(
-              "div",
-              { className: "grid", key: "grid" },
-              [
-                h(
-                  "div",
-                  { className: "card", key: "graph-card" },
-                  [
-                    h(
-                      "div",
-                      { className: "graph-header", key: "graph-header" },
-                      [
-                        h("span", { key: "label" }, `Last ${MAX_HISTORY} ticks`),
-                        h(
-                          "span",
-                          { className: "chip", key: "chip" },
-                          [
-                            "Last price: ",
-                            h("strong", { key: "strong" }, lastPrice ?? "…"),
-                          ]
-                        ),
-                      ]
-                    ),
-                    h(
-                      "div",
-                      { className: "graph-shell", key: "graph-shell" },
-                      [
-                        h("div", { className: "graph", key: "graph" }, h(LineGraph, { data: history })),
-                        h(RangeOverlay, {
-                          key: "overlay",
-                          low: range.low,
-                          high: range.high,
-                          onChange: (next) => {
-                            // BULLETPROOF validation - multiple layers
-                            let low = next.low;
-                            let high = next.high;
-                            
-                            // Step 1: Clamp to absolute bounds
-                            low = Math.max(1, Math.min(low, TICKS));
-                            high = Math.max(1, Math.min(high, TICKS));
-                            
-                            // Step 2: Ensure low < high
-                            if (low >= high) {
-                              if (low === TICKS) {
-                                low = TICKS - 1;
-                              } else {
-                                high = low + 1;
-                              }
-                            }
-                            
-                            // Step 3: Final bounds check
-                            low = Math.max(1, Math.min(low, TICKS - 1));
-                            high = Math.max(low + 1, Math.min(high, TICKS));
-                            
-                            // Step 4: Only set if valid
-                            if (low >= 1 && low < high && high <= TICKS) {
-                              setRange({ low, high });
-                            }
-                          },
-                        }),
-                      ]
-                    ),
-                    h(
-                      "div",
-                      { className: "metrics", key: "metrics" },
-                      [
-                        h(
-                          "div",
-                          { className: "metric", key: "metric1" },
-                          [
-                            h(
-                              "label",
-                              null,
-                              [
-                                "Expected multiplier (range)",
-                                h(
-                                  "button",
-                                  {
-                                    className: "icon-btn",
-                                    onClick: () => setShowModal(true),
-                                    title: "How multipliers work",
-                                  },
-                                  "?"
-                                ),
-                              ]
-                            ),
-                            h("div", { className: "value" }, `x${expectedMultiplier.toFixed(2)}`),
-                          ]
-                        ),
-                        h(
-                          "div",
-                          { className: "metric", key: "metric2" },
-                          [
-                            h("label", null, "Streak"),
-                            h("div", { className: "value" }, `${streak} correct`),
-                          ]
-                        ),
-                        h(
-                          "div",
-                          { className: "metric", key: "metric3" },
-                          [
-                            h("label", null, "Potential cashout"),
-                            h("div", { className: "value" }, `$${formatCurrency((sessionStake || betAmount) * multiplier)}`),
-                          ]
-                        ),
-                        h(
-                          "div",
-                          { className: "metric", key: "metric4" },
-                          [
-                            h("label", null, "Next price"),
-                            h("div", { className: "value" }, nextPrice ?? "?"),
-                          ]
-                        ),
-                      ]
-                    ),
-                  ]
-                ),
-
-                h(
-                  "div",
-                  { className: "card", key: "controls-card" },
-                  [
-                    h("h3", null, "Set your bet & range"),
-                    h(
-                      "div",
-                      { className: "message", style: { marginBottom: 10 } },
-                      `Demo balance: $${formatCurrency(balance)}`
-                    ),
-                    h(
-                      "div",
-                      { className: "controls" },
-                      [
-                        h(
-                          "div",
-                          { className: "input-group", key: "bet" },
-                          [
-                            h(
-                              "label",
-                              null,
-                              [
-                                "Bet amount",
-                                h("span", null, `$${formatCurrency(betAmount)}`),
-                              ]
-                            ),
-                            h("input", {
-                              type: "number",
-                              min: "1",
-                              step: "1",
-                              value: betAmount,
-                              onChange: (e) =>
-                                setBetAmount(clamp(Number(e.target.value || 0), 1, 100000)),
-                            }),
-                          ]
-                        ),
-                        h(
-                          "div",
-                          { className: "input-group", key: "bounds-numeric" },
-                          [
-                            h(
-                              "label",
-                              null,
-                              [
-                                "Bounds (numeric)",
-                                h(
-                                  "span",
-                                  null,
-                                  `${range.low} - ${range.high}`
-                                ),
-                              ]
-                            ),
-                            h(
-                              "div",
-                              { className: "range-row" },
-                              [
-                                h("input", {
-                                  type: "number",
-                                  min: "1",
-                                  max: TICKS,
-                                  value: range.low,
-                                  onChange: (e) =>
-                                    setRangeSafe(
-                                      Number(e.target.value || 1),
-                                      range.high
-                                    ),
-                                }),
-                                h("input", {
-                                  type: "number",
-                                  min: "1",
-                                  max: TICKS,
-                                  value: range.high,
-                                  onChange: (e) =>
-                                    setRangeSafe(
-                                      range.low,
-                                      Number(e.target.value || TICKS)
-                                    ),
-                                }),
-                              ]
-                            ),
-                            h(
-                              "div",
-                              { className: "notice" },
-                              "Values are clamped to 1-1000; swapped if out of order."
-                            ),
-                          ]
-                        ),
-                      ]
-                    ),
-
-                    h(RangeBar, { low: range.low, high: range.high }),
-
-                    h(
-                      "div",
-                      { className: "actions", style: { marginTop: 12 } },
-                      [
-                        h(
-                          "button",
-                          { className: "btn primary", onClick: onPredict },
-                          "Predict next tick"
-                        ),
-                        h(
-                          "button",
-                          {
-                            className: "btn secondary",
-                            onClick: onCashout,
-                            disabled: streak === 0 || status === "cashed",
-                          },
-                          "Cash out"
-                        ),
-                        h(
-                          "button",
-                          { className: "btn ghost", onClick: onReset },
-                          "Play again"
-                        ),
-                      ]
-                    ),
-
-                    h(
-                      "div",
-                      { className: "status" },
-                      [
-                        h(StatusBadge, { status }),
-                        h("span", null, statusCopy),
-                      ]
-                    ),
-
-                    h("div", { className: "message", style: { marginTop: 10 } }, message),
-
-                    status === "lost"
-                      ? h(
-                          "div",
-                          { className: "cta" },
-                          "Price slipped your band. Try again—keep refining your range!"
-                        )
-                      : null,
-
-                    status === "playing"
-                      ? h(
-                          "div",
-                          { className: "cashout" },
-                          [
-                            h(
-                              "div",
-                              null,
-                              [
-                                "Live multiplier ",
-                                h("strong", null, `x${multiplier.toFixed(2)}`),
-                                h(
-                                  "div",
-                                  { className: "notice" },
-                                  "Cash out anytime to lock winnings."
-                                ),
-                              ]
-                            ),
-                            h(
-                              "button",
-                              { className: "btn secondary", onClick: onCashout },
-                              "Cash out now"
-                            ),
-                          ]
-                        )
-                      : null,
-                    h(
-                      "div",
-                      { className: "input-group", style: { marginTop: 12 } },
-                      [
-                        h("label", null, "Recent rounds"),
-                        rounds.length === 0
-                          ? h("div", { className: "message" }, "No rounds yet. Make a prediction.")
-                          : h(
-                              "div",
-                              { className: "list" },
-                              rounds.slice(0, 6).map((r, idx) =>
-                                h(
-                                  "div",
-                                  { className: "row", key: idx },
-                                  [
-                                    h("span", null, `Price: ${r.price}`),
-                                    h(
-                                      "span",
-                                      { className: `pill ${r.result === "win" ? "" : ""}` },
-                                      r.result === "win" ? "Win" : "Miss"
-                                    ),
-                                    h("span", null, r.result === "win" ? `x${r.multiplier.toFixed(2)}` : "—"),
-                                  ]
-                                )
-                              )
-                            ),
-                      ]
-                    ),
-                  ]
-                ),
-              ]
-            ),
-          ]
-        ),
-
-        showModal
-          ? h(
-              "div",
-              {
-                className: "modal-backdrop",
-                onClick: () => setShowModal(false),
-              },
-              h(
-                "div",
-                {
-                  className: "modal",
-                  onClick: (e) => e.stopPropagation(),
-                },
-                [
-                  h(
-                    "button",
-                    {
-                      className: "close",
-                      onClick: () => setShowModal(false),
-                      title: "Close",
+                        // MECE Validation
+                        if (val < 0) setPayError("Values cannot be negative");
+                        else if (val === 0 || valStr === '') setPayError(null);
+                        else if (val > balance) setPayError("Insufficient balance");
+                        else setPayError(null);
+                      }
                     },
-                    "✕"
-                  ),
-                  h("h4", null, "How multipliers are calculated"),
-                  h(
-                    "ul",
-                    null,
-                    [
-                      h(
-                        "li",
-                        null,
-                        "Expected multiplier: fair odds (1 / p) where p = band width / 1000, then a 15% house edge is applied (× 0.85)."
-                      ),
-                      h(
-                        "li",
-                        null,
-                        "Live streak multiplier: starts at 1.0, adds 0.35 per correct guess, then applies the same 15% edge."
-                      ),
-                      h(
-                        "li",
-                        null,
-                        "Payout when correct: current stake × edged streak multiplier. Cashout locks this amount and resets the streak."
-                      ),
-                      h(
-                        "li",
-                        null,
-                        "Balance: bet is deducted when starting a new run (streak 0), and winnings are credited on cashout."
-                      ),
-                    ]
-                  ),
-                ]
-              )
-            )
-          : null,
-      ]
-    );
+                    disabled: status !== 'idle'
+                  }),
+                  h("span", { className: "token-pill" }, [
+                    h("img", { src: "usdc.png", className: "currency-logo" }),
+                    "USDC"
+                  ])
+                ])
+              ]),
+              payError && h("div", { style: { color: "#fd4f4f", fontSize: "12px", marginTop: "4px", paddingLeft: "4px" } }, payError),
+
+              // Arrow
+              h("div", { className: "swap-arrow-container", key: "arrow" },
+                h("div", { className: "swap-arrow" }, "↓")
+              ),
+
+              // "You Receive" Section
+              h("div", { className: `swap-input-container ${payoutError ? 'input-error' : ''}`, key: "rec" }, [
+                h("div", { className: "swap-label-row" }, [
+                  h("span", {}, "You receive (Potential)"),
+                  h("span", { className: "balance-label" }, `${multiplier}x Payout`)
+                ]),
+                h("div", { className: "swap-input-row" }, [
+                  h("input", {
+                    className: "token-input",
+                    type: "number",
+                    // Edit enabled for reverse calculation
+                    value: isPayoutFocused ? payoutInput : potentialPayout,
+                    onFocus: e => {
+                      setIsPayoutFocused(true);
+                      setPayoutInput(potentialPayout);
+                      e.target.select();
+                    },
+                    onBlur: () => setIsPayoutFocused(false),
+                    onChange: e => {
+                      setPayoutInput(e.target.value);
+                      handlePayoutChange(e.target.value);
+                    },
+                    style: { color: "#4c82fb" } // Blue for potential profit
+                  }),
+                  h("span", { className: "token-pill" }, [
+                    h("img", { src: "usdc.png", className: "currency-logo" }),
+                    "USDC"
+                  ])
+                ])
+              ]),
+              payoutError && h("div", { style: { color: "#fd4f4f", fontSize: "12px", marginTop: "4px", paddingLeft: "4px" } }, payoutError),
+              h("div", { className: "swap-info", key: "info" }, [
+                h("div", { className: "info-row" }, [
+                  h("span", {}, "Selected Range"),
+                  h("span", {}, `${range.low} - ${range.high}`) // Display 0-based index
+                ]),
+                h("div", { className: "info-row" }, [
+                  h("span", {}, "Win Probability"),
+                  h("span", {}, `${((range.high - range.low) / 10).toFixed(1)}%`)
+                ])
+              ]),
+              h("div", { style: { display: "flex", gap: "8px", marginTop: "8px" } }, [
+                status === 'won_streak' && h("button", {
+                  className: "button-secondary",
+                  style: { flex: 1 },
+                  onClick: handleCashout
+                }, "Cashout"),
+                h("button", {
+                  className: "button-primary",
+                  style: { flex: 1, marginTop: 0 },
+                  disabled: status === 'playing' || multiplier <= 0 || (status === 'idle' && baseBet <= 0),
+                  onClick: playRound
+                }, status === 'playing' ? "Swapping..." : (status === 'won_streak' ? "Compound" : "Place Trade"))
+              ])
+            ])
+          ])
+        ]
+    ]);
   };
 
   ReactDOM.createRoot(document.getElementById("root")).render(h(App));
 })();
-
