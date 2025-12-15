@@ -79,7 +79,7 @@ a {
 }
 
 .shell {
-  max-width: 1200px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 32px 20px 64px;
 }
@@ -200,6 +200,8 @@ a {
   pointer-events: auto;
   cursor: move;
   z-index: 10;
+  touch-action: none;
+  /* Prevent scroll on mobile */
 }
 
 .range-overlay .band:hover {
@@ -226,6 +228,8 @@ a {
   z-index: 20;
   cursor: ns-resize;
   pointer-events: auto;
+  touch-action: none;
+  /* Prevent scroll on mobile */
 }
 
 .range-handle:hover {
@@ -627,6 +631,71 @@ a {
   padding-top: 60px;
 }
 
+/* Quick Bet Buttons (Global) */
+.quick-bet-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.quick-btn {
+  /* Reset & Unify */
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  border: none;
+  background: transparent;
+  margin: 0;
+
+  /* Layout */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-width: 48px;
+  padding: 0 14px;
+  border-radius: 30px;
+  box-sizing: border-box;
+
+  /* Liquid Glass Theme */
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 0 12px rgba(255, 255, 255, 0.03),
+    0 1px 2px rgba(0, 0, 0, 0.1);
+
+  /* Typography */
+  color: var(--text);
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1;
+
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.quick-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 0 15px rgba(255, 255, 255, 0.1),
+    0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.quick-btn:active {
+  transform: translateY(0);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 @media (max-width: 800px) {
   .grid {
     grid-template-columns: 1fr;
@@ -642,6 +711,7 @@ a {
   .shell {
     padding: 20px 16px 80px;
   }
+
 
   .graph-shell {
     height: auto !important;
@@ -715,16 +785,21 @@ a {
 }
 
 .history-chip {
-  background: var(--panel-2);
-  color: var(--subtext);
-  padding: 4px 12px;
-  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  padding: 8px 16px;
+  /* Increased padding */
+  border-radius: 99px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  /* Prevent squishing */
+  flex-shrink: 0;
   white-space: nowrap;
-  border: 1px solid var(--border);
-  min-width: 40px;
-  text-align: center;
 }
 
 /* Button & Input States */
@@ -1197,7 +1272,7 @@ a {
   display: grid;
   grid-template-columns: 1fr 340px;
   gap: 12px;
-  max-width: 960px;
+  /* max-width removed to inherit from shell */
   margin: 0 auto;
 }
 

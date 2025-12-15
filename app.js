@@ -15,7 +15,7 @@
   const formatCurrency = (val) =>
     Number(val || 0).toLocaleString(undefined, {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: 6,
     });
 
   const StatusBadge = ({ status }) => {
@@ -269,8 +269,8 @@
       if (!dragging.current || !overlayRef.current) return;
 
       // Prevent scrolling on touch devices while dragging
-      if (e.touches) {
-        // e.preventDefault(); // Handled by passive: false in listener
+      if (e.touches && e.cancelable) {
+        e.preventDefault();
       }
 
       const rect = overlayRef.current.getBoundingClientRect();
@@ -644,12 +644,12 @@
       const size = Math.max(1, range.high - range.low);
       const probability = size / TICKS;
       if (probability <= 0) return 0;
-      return Number((0.85 / probability).toFixed(2));
+      return Number((0.85 / probability).toFixed(6));
     }, [range]);
 
     const potentialPayout = useMemo(() => {
       const activeBet = status === 'won_streak' ? currentBet : baseBet;
-      return Number((activeBet * multiplier).toFixed(2));
+      return Number((activeBet * multiplier).toFixed(6));
     }, [currentBet, baseBet, multiplier, status]);
 
     // Sync payoutInput when not editing
@@ -669,14 +669,18 @@
     };
 
     // Reverse Calculation for Payout Input
-    const handlePayoutChange = (val) => {
-      const targetPayout = Number(val);
+    const handlePayoutChange = (valStr) => {
+      const val = parseFloat(valStr); // Use float to preserve decimals
+      if (isNaN(val) || val <= 0) {
+        setPayoutError("Enter valid payout");
+        return;
+      }
+      setPayoutInput(valStr);
+
+      const targetPayout = val;
       const activeBet = status === 'won_streak' ? currentBet : baseBet;
+      if (activeBet <= 0) return;
 
-      if (!targetPayout || targetPayout <= 0 || activeBet <= 0) return;
-
-      // Formula: Payout = Bet * (0.85 / Probability)
-      // Multiplier = Payout / Bet
       const targetMultiplier = targetPayout / activeBet;
 
       // Constraint: Size = 850 / Multiplier
@@ -684,12 +688,13 @@
 
       // OPTIMIZER: Check neighbors for better precision
       // We want the size that yields a payout closest to targetPayout
-      // after the full round-trip logic (tick -> prob -> multiplier(2dp) -> payout)
+      // after the full round-trip logic (tick -> prob -> multiplier(6dp) -> payout)
       const calcPayout = (s) => {
         if (s <= 0) return 0;
         const p = s / TICKS;
-        const m = Number((0.85 / p).toFixed(2));
-        return Number((activeBet * m).toFixed(2));
+        // Maintain 6 decimal precision
+        const m = Number((0.85 / p).toFixed(6));
+        return Number((activeBet * m).toFixed(6));
       };
 
       const candidates = [newSize, newSize - 1, newSize + 1];
@@ -751,7 +756,8 @@
       // Note: betAmount is the snapshot of what was risked
 
       if (won) {
-        const winAmount = Number((betAmount * multiplier).toFixed(2));
+        // High Precision accumulation
+        const winAmount = Number((betAmount * multiplier).toFixed(6));
         setCurrentBet(winAmount);
         setStatus('won_streak');
         setLastResult({ won: true, price: finalPrice });
@@ -790,9 +796,9 @@
           setPayError("Insufficient balance");
           return;
         }
-        setBalance(b => b - activeBet);
+        setBalance(b => Number((b - activeBet).toFixed(6))); // Ensure precision
         setCurrentBet(activeBet);
-        setSessionPnL(p => p - activeBet);
+        setSessionPnL(p => Number((p - activeBet).toFixed(6))); // Ensure precision
       }
 
       setPayError(null);
@@ -804,15 +810,15 @@
     };
 
     const handleCashout = () => {
-      setBalance(b => b + currentBet);
-      setSessionPnL(p => p + currentBet); // Add winnings to PnL
+      setBalance(b => Number((b + currentBet).toFixed(6))); // Ensure precision
+      setSessionPnL(p => Number((p + currentBet).toFixed(6))); // Add winnings to PnL, ensure precision
 
       // Log WIN (EndOfSession - Cashout)
       setUserBets(prev => [...prev, {
         result: 'win',
         price: lastResult ? lastResult.price : 0, // Price of the LAST tick that allowed cashout
-        amount: baseBet, // Initial Investment
-        payout: currentBet, // Final Realized Value
+        amount: Number(baseBet.toFixed(6)), // Initial Investment, ensure precision
+        payout: Number(currentBet.toFixed(6)), // Final Realized Value, ensure precision
         range: { ...range }
       }]);
 
@@ -820,6 +826,24 @@
       setCurrentBet(baseBet);
     };
 
+
+
+    // Quick Bet Handlers (Fixing omission)
+    const handleHalfBet = () => {
+      if (status !== 'idle') return;
+      const newBet = Number((baseBet / 2).toFixed(6)); // No floor, allow decimals, ensure precision
+      setBaseBet(newBet);
+      if (newBet > balance) setPayError("Insufficient balance");
+      else setPayError(null);
+    };
+
+    const handleDoubleBet = () => {
+      if (status !== 'idle') return;
+      const newBet = Number((baseBet * 2).toFixed(6)); // Ensure precision
+      setBaseBet(newBet);
+      if (newBet > balance) setPayError("Insufficient balance");
+      else setPayError(null);
+    };
 
     return h("div", { className: "shell" }, [
       // Header
@@ -894,8 +918,12 @@
                   h("input", {
                     className: "token-input",
                     type: "number",
+                    step: "any", // Allow decimals
                     placeholder: "0",
-                    value: status === 'won_streak' ? currentBet : (baseBet === 0 ? '' : baseBet),
+                    // Smart format: up to 6 decimals
+                    value: status === 'won_streak'
+                      ? Number(currentBet.toFixed(6))
+                      : (baseBet === 0 ? '' : baseBet),
                     onFocus: e => e.target.select(),
                     onChange: e => {
                       if (status === 'idle') {
@@ -916,6 +944,11 @@
                     h("img", { src: "usdc.png", className: "currency-logo" }),
                     "USDC"
                   ])
+                ]),
+                // Quick Bet Buttons Row
+                status === 'idle' && h("div", { className: "quick-bet-row" }, [
+                  h("button", { className: "quick-btn", onClick: handleHalfBet }, "1/2"),
+                  h("button", { className: "quick-btn", onClick: handleDoubleBet }, "2x"),
                 ])
               ]),
               payError && h("div", { style: { color: "#fd4f4f", fontSize: "12px", marginTop: "4px", paddingLeft: "4px" } }, payError),
@@ -929,17 +962,17 @@
               h("div", { className: `swap-input-container ${payoutError ? 'input-error' : ''}`, key: "rec" }, [
                 h("div", { className: "swap-label-row" }, [
                   h("span", {}, "You receive (Potential)"),
-                  h("span", { className: "balance-label" }, `${multiplier}x Payout`)
+                  h("span", { className: "balance-label" }, `${Number(multiplier.toFixed(6))}x Payout`) // Smart format: up to 6 decimals
                 ]),
                 h("div", { className: "swap-input-row" }, [
                   h("input", {
                     className: "token-input",
                     type: "number",
                     // Edit enabled for reverse calculation
-                    value: isPayoutFocused ? payoutInput : potentialPayout,
+                    value: isPayoutFocused ? payoutInput : (typeof potentialPayout === 'number' ? Number(potentialPayout.toFixed(6)) : potentialPayout), // Smart format
                     onFocus: e => {
                       setIsPayoutFocused(true);
-                      setPayoutInput(potentialPayout);
+                      setPayoutInput(Number(potentialPayout.toFixed(6)).toString()); // Smart format for edit start
                       e.target.select();
                     },
                     onBlur: () => setIsPayoutFocused(false),
