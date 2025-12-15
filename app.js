@@ -211,7 +211,7 @@
             return h("circle", {
               key: `pt-${idx}`,
               cx: x, cy: y,
-              r: isLast ? 6 : 3,
+              r: isLast ? 8 : 3,
               fill: isLast ? "#ffffff" : "#ec4899",
               stroke: isLast ? "#3b82f6" : "none",
               strokeWidth: isLast ? "3" : "0",
@@ -498,7 +498,7 @@
           },
           onMouseDown: handleHandleStart("low"),
           onTouchStart: handleHandleStart("low")
-        }),
+        }, h("div", { className: "handle-pill" }, safeLow)),
         h("div", {
           key: "handle-high",
           className: "range-handle range-handle-high",
@@ -509,9 +509,110 @@
           },
           onMouseDown: handleHandleStart("high"),
           onTouchStart: handleHandleStart("high")
-        }),
+        }, h("div", { className: "handle-pill" }, safeHigh)),
       ]
     );
+  };
+
+  /*
+     GRAPH LABELS OVERLAY COMPONENT
+     Renders text and pills on top of the blur mask
+  */
+  const GraphLabelsOverlay = ({ data, width, height, padding }) => {
+    // Replicate scaling logic to align perfectly
+    const maxY = Math.max(...data, 100);
+    const minY = 0; // Fixed floor
+    const rangeY = maxY - minY;
+
+    const scaleX = (width - padding.left - padding.right) / (data.length - 1);
+    const scaleY = (height - padding.top - padding.bottom) / rangeY;
+
+    return h("svg", {
+      width: "100%",
+      height: "100%",
+      viewBox: `0 0 ${width} ${height}`,
+
+      style: { position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 15 } // Z-Index 15: Above Mask(5), Below Handle(20)
+    }, [
+      // History Labels (ALL ticks)
+      data.map((val, idx) => {
+        // if (idx === data.length - 1) return null; // Logic removed: Show Last Tick
+        const isLast = idx === data.length - 1;
+
+        const x = padding.left + idx * scaleX;
+        const y = height - padding.bottom - (val - minY) * scaleY;
+        const priceStr = val.toString();
+        // Dynamic Width Calculation
+        const charW = 7;
+        const paddingW = 12;
+        const w = paddingW + (priceStr.length * charW);
+        const pillHeight = isLast ? 24 : 16; // Height reference
+
+        // --- Boundary Clamping Logic ---
+
+        // 1. Vertical Positioning (Smart Flip + Clamp)
+        // Default to ABOVE the point
+        let pillY = y - pillHeight - 8;
+
+        // If it spills off the TOP, flip to BELOW
+        if (pillY < 2) {
+          pillY = y + 12;
+        }
+
+        // Hard Clamp Y to keep inside container (Bottom check)
+        // Ensure it doesn't go off the bottom edge
+        pillY = Math.max(2, Math.min(height - pillHeight - 2, pillY));
+
+        // 2. Horizontal Clamping (Keep fully visible)
+        let pillLeft = x - (w / 2);
+        // Clamp Left
+        if (pillLeft < 2) pillLeft = 2;
+        // Clamp Right
+        if (pillLeft + w > width - 2) pillLeft = width - w - 2;
+
+        // Re-derive Center X from clamped Left
+        const resultX = pillLeft + (w / 2);
+
+
+        if (isLast) {
+          const lastTickW = 20 + (priceStr.length * 8.5);
+          // Re-run horizontal clamp for the possibly wider last tick
+          let lastLeft = x - (lastTickW / 2);
+          if (lastLeft < 2) lastLeft = 2;
+          if (lastLeft + lastTickW > width - 2) lastLeft = width - lastTickW - 2;
+
+          return h("foreignObject", {
+            key: `lbl-${idx}`,
+            x: lastLeft,
+            y: pillY - 2, // Adjust for HTML positioning
+            width: lastTickW,
+            height: 24,
+            style: { overflow: 'visible' }
+          }, h("div", {
+            className: "handle-pill last-tick",
+            style: { width: '100%', height: '100%', padding: '0' }
+          }, priceStr));
+        }
+
+        return h("g", { key: `lbl-${idx}` }, [
+          h("rect", {
+            x: resultX - (w / 2), y: pillY, width: w, height: 16, rx: 8,
+            fill: "rgba(255, 255, 255, 0.1)",
+            stroke: "rgba(255, 255, 255, 0.2)",
+            strokeWidth: "1"
+          }),
+          h("text", {
+            x: resultX, y: pillY + 8,
+            textAnchor: "middle",
+            fill: "#fff",
+            fontSize: "10px",
+            fontWeight: "600",
+            dominantBaseline: "central",
+            style: { pointerEvents: "none" }
+          }, priceStr)
+        ]);
+      }),
+    ]);
   };
 
 
@@ -877,24 +978,18 @@
       view === 'stats'
         ? h(StatsView, { bets: userBets, pnl: sessionPnL })
         : [
-          // History Tape
-          h(HistoryTape, { history, key: "tape" }),
-
           // Main Grid
           h("div", { className: "grid", key: "g" }, [
 
             // Left Column: Graph
             h("div", { className: `card ${animClass}`, key: "gc" }, [ // Apply animation here
               h("div", { className: "graph-header", key: "gh" }, [
-                h("span", { key: "l1", style: { fontSize: "13px", color: "#98a1c0" } },
-                  "Guess the next price • Shorter range = Higher win"
-                ),
-                h("span", { key: "l2", className: "chip", style: { display: 'flex', alignItems: 'center', gap: '6px' } }, [
-                  lastResult ? "Result:" : "Last:",
-                  h("span", { style: { fontWeight: 700, color: "#fff" } }, lastResult ? lastResult.price : lastPrice),
-                  h("img", { src: "usdc.png", className: "mini-logo" }),
+                h("div", { key: "l1", style: { display: "flex", flexDirection: "column", gap: "4px" } }, [
+                  h("span", { style: { fontSize: "16px", fontWeight: "700", color: "#fff" } }, "Guess the next price"),
+                  h("span", { style: { fontSize: "13px", color: "#98a1c0" } }, "Shorter range = Higher win")
                 ])
               ]),
+
               h("div", { className: "graph-shell", key: "gs" }, [
                 h("div", { className: "graph", key: "g-inner" }, h(LineGraph, { data: history })),
                 h(RangeOverlay, {
@@ -902,9 +997,17 @@
                   low: range.low,
                   high: range.high,
                   onChange: handleRangeChange
+                }),
+                // New Top Layer for Labels (Unblurred)
+                h(GraphLabelsOverlay, {
+                  data: history,
+                  width: GRAPH_WIDTH,
+                  height: GRAPH_HEIGHT,
+                  padding: GRAPH_PADDING
                 })
-              ])
-            ]),
+              ]), // End Graph Shell
+            ]), // End Card (Graph Column)
+
 
             // Right Column: Swap Interface
             h("div", { className: "defi-card", key: "dc" }, [
@@ -940,16 +1043,24 @@
                     },
                     disabled: status !== 'idle'
                   }),
+                  h("div", { className: "input-quick-actions" }, [
+                    h("button", {
+                      className: "quick-btn",
+                      onClick: handleHalfBet,
+                      style: { display: status === 'idle' ? 'inline-flex' : 'none' }
+                    }, "1/2"),
+                    h("button", {
+                      className: "quick-btn",
+                      onClick: handleDoubleBet,
+                      style: { display: status === 'idle' ? 'inline-flex' : 'none' }
+                    }, "2x"),
+                  ]),
                   h("span", { className: "token-pill" }, [
                     h("img", { src: "usdc.png", className: "currency-logo" }),
                     "USDC"
                   ])
                 ]),
-                // Quick Bet Buttons Row
-                status === 'idle' && h("div", { className: "quick-bet-row" }, [
-                  h("button", { className: "quick-btn", onClick: handleHalfBet }, "1/2"),
-                  h("button", { className: "quick-btn", onClick: handleDoubleBet }, "2x"),
-                ])
+                // Removed separate Quick Bet Row
               ]),
               payError && h("div", { style: { color: "#fd4f4f", fontSize: "12px", marginTop: "4px", paddingLeft: "4px" } }, payError),
 
