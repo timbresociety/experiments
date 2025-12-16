@@ -128,7 +128,7 @@ a {
 .graph-shell {
   position: relative;
   width: 100%;
-  height: 300px;
+  height: 286px;
   overflow: hidden;
   /* CRITICAL: Clips the range bar */
   border-radius: 0 0 20px 20px;
@@ -299,7 +299,8 @@ a {
 }
 
 .range-handle:active .handle-pill {
-  background: rgba(236, 72, 153, 0.4);
+  background: #050505;
+  border-color: #ec4899;
   transform: scale(0.95);
 }
 
@@ -467,6 +468,7 @@ a {
     0 10px 40px rgba(0, 0, 0, 0.4);
 
   transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  height: fit-content;
 }
 
 /* Subtle Ambient Glow for Graph */
@@ -1149,6 +1151,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  height: fit-content;
 }
 
 .swap-input-container {

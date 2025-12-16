@@ -33,9 +33,9 @@
      Shared Layout Constants
      GRAPH_PADDING: Reverted for Vertical Overlay (Top 20px)
   */
-  const GRAPH_PADDING = { top: 20, right: 60, bottom: 70, left: 30 }; // Increased bottom padding to 70
+  const GRAPH_PADDING = { top: 20, right: 60, bottom: 40, left: 30 }; // Increased bottom padding to 70
   const GRAPH_WIDTH = 560;
-  const GRAPH_HEIGHT = 300;
+  const GRAPH_HEIGHT = 286;
 
   const LineGraph = ({ data }) => {
     // Canvas dimensions
@@ -468,7 +468,7 @@
             border: "1px solid rgba(255, 255, 255, 0.3)",
             borderRadius: "4px",
             pointerEvents: "none",
-            zIndex: 50
+            zIndex: 10
           }
         }),
 
@@ -519,12 +519,12 @@
      Renders text and pills on top of the blur mask
   */
   const GraphLabelsOverlay = ({ data, width, height, padding }) => {
-    // Replicate scaling logic to align perfectly
-    const maxY = Math.max(...data, 100);
-    const minY = 0; // Fixed floor
+    // Replicate scaling logic to align perfectly with LineGraph
+    const maxY = TICKS; // FIXED: Use global TICKS (1000)
+    const minY = 0;
     const rangeY = maxY - minY;
 
-    const scaleX = (width - padding.left - padding.right) / (data.length - 1);
+    const scaleX = (width - padding.left - padding.right) / Math.max(data.length - 1, 1); // Match LineGraph X scale
     const scaleY = (height - padding.top - padding.bottom) / rangeY;
 
     return h("svg", {
@@ -597,7 +597,7 @@
         return h("g", { key: `lbl-${idx}` }, [
           h("rect", {
             x: resultX - (w / 2), y: pillY, width: w, height: 16, rx: 8,
-            fill: "rgba(255, 255, 255, 0.1)",
+            fill: "#050505",
             stroke: "rgba(255, 255, 255, 0.2)",
             strokeWidth: "1"
           }),
