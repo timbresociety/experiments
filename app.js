@@ -207,15 +207,13 @@
           // Data Points
           points.split(" ").map((p, idx) => {
             const [x, y] = p.split(",").map(Number);
-            const isLast = idx === data.length - 1;
             return h("circle", {
               key: `pt-${idx}`,
               cx: x, cy: y,
-              r: isLast ? 8 : 3,
-              fill: isLast ? "#ffffff" : "#ec4899",
-              stroke: isLast ? "#3b82f6" : "none",
-              strokeWidth: isLast ? "3" : "0",
-              style: isLast ? { filter: "url(#glow)", animation: "pulse-dot 2s infinite" } : {},
+              r: 3,
+              fill: "#ec4899",
+              stroke: "none",
+              strokeWidth: "0",
             });
           }),
 
@@ -612,6 +610,23 @@
           }, priceStr)
         ]);
       }),
+
+      // White Dot (Moved here to be above blur)
+      (() => {
+        const lastIdx = data.length - 1;
+        const lastVal = data[lastIdx];
+        const lastX = padding.left + lastIdx * scaleX;
+        const lastY = height - padding.bottom - (lastVal - minY) * scaleY;
+        return h("circle", {
+          key: "last-dot",
+          cx: lastX, cy: lastY,
+          r: 8,
+          fill: "#ffffff",
+          stroke: "#3b82f6",
+          strokeWidth: "3",
+          style: { filter: "url(#glow)", animation: "pulse-dot 2s infinite" }
+        });
+      })(),
     ]);
   };
 
@@ -740,12 +755,12 @@
       setLastPrice(history[history.length - 1]);
     }, [history]);
 
-    // Multiplier Logic (85% RTP)
+    // Multiplier Logic
     const multiplier = useMemo(() => {
       const size = Math.max(1, range.high - range.low);
       const probability = size / TICKS;
       if (probability <= 0) return 0;
-      return Number((0.85 / probability).toFixed(6));
+      return Number((0.80 / probability).toFixed(6));
     }, [range]);
 
     const potentialPayout = useMemo(() => {
@@ -784,8 +799,8 @@
 
       const targetMultiplier = targetPayout / activeBet;
 
-      // Constraint: Size = 850 / Multiplier
-      let newSize = Math.round(850 / targetMultiplier);
+      // Constraint: Size = 800 / Multiplier
+      let newSize = Math.round(800 / targetMultiplier);
 
       // OPTIMIZER: Check neighbors for better precision
       // We want the size that yields a payout closest to targetPayout
@@ -794,7 +809,7 @@
         if (s <= 0) return 0;
         const p = s / TICKS;
         // Maintain 6 decimal precision
-        const m = Number((0.85 / p).toFixed(6));
+        const m = Number((0.80 / p).toFixed(6));
         return Number((activeBet * m).toFixed(6));
       };
 
@@ -817,7 +832,7 @@
       // Constraints with Feedback
       if (newSize < 10) {
         newSize = 10;
-        warning = "Max Payout Limit (85x)";
+        warning = "Max Payout Limit (80x)";
       } else if (newSize > 800) {
         newSize = 800;
         warning = "Min Payout Limit (Start with 80% range)";
