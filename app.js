@@ -324,11 +324,12 @@
         newLow = Math.max(0, Math.min(validLow, constrainedTick - 1));
       }
 
-      if (newHigh - newLow > 800) {
+      // Enforce 750 Limit (Refactored from 800)
+      if (newHigh - newLow > 750) {
         if (dragging.current === "low") {
-          newLow = newHigh - 800;
+          newLow = newHigh - 750;
         } else {
-          newHigh = newLow + 800;
+          newHigh = newLow + 750;
         }
       }
 
@@ -781,6 +782,16 @@
       let { low, high } = newRange;
       low = Math.max(0, Math.min(low, TICKS - 1)); // Allow 0
       high = Math.max(low + 1, Math.min(high, TICKS));
+
+      // Enforce Max Size 750 (Min Payout > 1.0)
+      if (high - low > 750) {
+        high = low + 750;
+        if (high > TICKS) { // If shifting high hits ceil, shift low back
+          high = TICKS;
+          low = TICKS - 750;
+        }
+      }
+
       setRange({ low, high });
     };
 
@@ -818,7 +829,7 @@
       let minDiff = Math.abs(calcPayout(newSize) - targetPayout);
 
       candidates.forEach(s => {
-        if (s < 10 || s > 800) return; // Skip invalid
+        if (s < 10 || s > 750) return; // Skip invalid (Max 750)
         const diff = Math.abs(calcPayout(s) - targetPayout);
         if (diff < minDiff) {
           minDiff = diff;
@@ -833,9 +844,9 @@
       if (newSize < 10) {
         newSize = 10;
         warning = "Max Payout Limit (80x)";
-      } else if (newSize > 800) {
-        newSize = 800;
-        warning = "Min Payout Limit (Start with 80% range)";
+      } else if (newSize > 750) {
+        newSize = 750;
+        warning = "Min Payout Limit (Max 75% range)";
       }
 
       setPayoutError(warning);
@@ -892,8 +903,31 @@
           range: { ...range }
         }]);
 
-        setCurrentBet(baseBet);
+        // Auto-Correction Logic for Edge Case:
+        // If remaining balance < betAmount, cap the next bet to remaining balance.
+
+        // FIX: Only subtract betAmount if we actually paid from wallet (status === 'idle')
+        // In 'won_streak', we are betting logic validBalance, so wallet balance is untouched.
+        let remainingBalance;
+        if (status === 'idle') {
+          remainingBalance = Number((balance - betAmount).toFixed(6));
+        } else {
+          remainingBalance = balance;
+        }
+
+        // Safety clamp
+        if (remainingBalance < 0) remainingBalance = 0;
+
+        // If the user wants to bet 'baseBet' again, checks if they can afford it
+        let nextBet = baseBet;
+        if (remainingBalance < baseBet) {
+          nextBet = remainingBalance;
+        }
+
         setStatus('idle');
+        setCurrentBet(nextBet);
+        setBaseBet(nextBet);
+
         setLastResult({ won: false, price: finalPrice });
         setAnimClass("anim-loss");
       }
@@ -955,10 +989,15 @@
 
     const handleDoubleBet = () => {
       if (status !== 'idle') return;
-      const newBet = Number((baseBet * 2).toFixed(6)); // Ensure precision
+      let newBet = Number((baseBet * 2).toFixed(6)); // Ensure precision
+
+      if (newBet > balance) {
+        newBet = balance;
+        setPayError("Insufficient balance - Capped at Max");
+      } else {
+        setPayError(null);
+      }
       setBaseBet(newBet);
-      if (newBet > balance) setPayError("Insufficient balance");
-      else setPayError(null);
     };
 
     return h("div", { className: "shell" }, [
@@ -1036,24 +1075,43 @@
                   h("input", {
                     className: "token-input",
                     type: "number",
-                    step: "any", // Allow decimals
+                    step: "any", // Allow decimals for display (accumulated bet)
+                    min: "1",
                     placeholder: "0",
-                    // Smart format: up to 6 decimals
+                    // Display full precision for accumulated bets, integer for manual
                     value: status === 'won_streak'
                       ? Number(currentBet.toFixed(6))
                       : (baseBet === 0 ? '' : baseBet),
                     onFocus: e => e.target.select(),
+                    // Block non-integer chars ONLY when typing (idle)
+                    onKeyDown: (e) => {
+                      if (status === 'idle' && ["-", "+", "e", "E", "."].includes(e.key)) {
+                        e.preventDefault();
+                      }
+                    },
                     onChange: e => {
                       if (status === 'idle') {
                         const valStr = e.target.value;
-                        const val = Number(valStr);
-                        setBaseBet(val);
+                        // Strict Integer Parsing
+                        let val = parseInt(valStr, 10);
 
-                        // MECE Validation
-                        if (val < 0) setPayError("Values cannot be negative");
-                        else if (val === 0 || valStr === '') setPayError(null);
-                        else if (val > balance) setPayError("Insufficient balance");
-                        else setPayError(null);
+                        // Handle NaN (empty input)
+                        if (isNaN(val)) val = 0;
+
+                        // Auto-Cap Logic for Manual Input
+                        if (val > balance) {
+                          val = Math.floor(balance); // Cap at integer balance
+                          setPayError("Insufficient balance - Capped at Max");
+                        } else if (val < 0) {
+                          val = 0; // Strictly disallow negative
+                          setPayError(null);
+                        } else {
+                          // MECE Validation
+                          // if (val === 0 && valStr !== '') setPayError(null);
+                          setPayError(null);
+                        }
+
+                        setBaseBet(val);
                       }
                     },
                     disabled: status !== 'idle'
@@ -1075,9 +1133,9 @@
                     "USDC"
                   ])
                 ]),
-                // Removed separate Quick Bet Row
+                // Error Message Inside Container
+                payError && h("div", { style: { color: "#fd4f4f", fontSize: "12px", marginTop: "8px", fontWeight: "500" } }, payError),
               ]),
-              payError && h("div", { style: { color: "#fd4f4f", fontSize: "12px", marginTop: "4px", paddingLeft: "4px" } }, payError),
 
               // Arrow
               h("div", { className: "swap-arrow-container", key: "arrow" },
@@ -1094,6 +1152,7 @@
                   h("input", {
                     className: "token-input",
                     type: "number",
+                    step: "any", // Allow decimals for payout
                     // Edit enabled for reverse calculation
                     value: isPayoutFocused ? payoutInput : (typeof potentialPayout === 'number' ? Number(potentialPayout.toFixed(6)) : potentialPayout), // Smart format
                     onFocus: e => {

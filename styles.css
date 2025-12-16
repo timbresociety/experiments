@@ -1160,7 +1160,7 @@ a {
   padding: 16px;
   border: 1px solid transparent;
   /* Prepare for focus state */
-  transition: border-color 0.2s;
+  transition: all 0.2s ease;
 }
 
 /* Typography Refinements for CRED style - Adjusted */
@@ -1215,6 +1215,8 @@ a {
 .input-error {
   border-color: var(--danger) !important;
   background: rgba(253, 79, 79, 0.05);
+  padding-bottom: 32px;
+  /* Clear space for arrow and error message */
 }
 
 .swap-input-container:hover {
@@ -1249,6 +1251,17 @@ a {
 
 .token-input:disabled {
   color: var(--subtext);
+}
+
+/* Hide Spinners */
+.token-input::-webkit-outer-spin-button,
+.token-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.token-input[type=number] {
+  -moz-appearance: textfield;
 }
 
 .token-pill {
