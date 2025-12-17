@@ -12,6 +12,60 @@
 
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
+  /* 
+     CRYPTO / PROVABLY FAIR HELPERS 
+  */
+  // 1. Generate a random Hex string (Server Seed)
+  const generateRandomHex = (len = 64) => {
+    const arr = new Uint8Array(len / 2);
+    window.crypto.getRandomValues(arr);
+    return Array.from(arr, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  };
+
+  // 2. SHA-256 Hash (for hiding server seed)
+  const sha256 = async (message) => {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  };
+
+  // 3. HMAC-SHA256 (The Core RNG)
+  const hmacSha256 = async (keyHex, data) => {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(keyHex),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const signature = await crypto.subtle.sign("HMAC", key, enc.encode(data));
+    return new Uint8Array(signature);
+  };
+
+  // 4. Calculate Tick from Hash
+  const getTickFromHash = (hashBytes) => {
+    // Convert first 4 bytes to an unsigned 32-bit integer
+    // We use arithmetic multiplication to avoid JavaScript's bitwise text-to-signed-int32 conversion issue
+    let val = 0;
+    for (let i = 0; i < 4; i++) {
+      val = (val * 256) + hashBytes[i];
+    }
+    // val is 0 to 4294967295
+    const p = val / 4294967296; // Normalize to [0, 1)
+
+    // Map to 0-1000 (inclusive) as requested
+    return Math.floor(p * 1001);
+  };
+
+  // 5. Main wrapper
+  const generateResult = async (serverSeed, clientSeed, nonce) => {
+    const data = `${clientSeed}:${nonce}`;
+    const hashBytes = await hmacSha256(serverSeed, data);
+    return getTickFromHash(hashBytes);
+  };
+
   const formatCurrency = (val) =>
     Number(val || 0).toLocaleString(undefined, {
       minimumFractionDigits: 2,
@@ -37,7 +91,7 @@
   const GRAPH_WIDTH = 560;
   const GRAPH_HEIGHT = 286;
 
-  const LineGraph = ({ data }) => {
+  const LineGraph = ({ data, low, high }) => {
     // Canvas dimensions
     const width = GRAPH_WIDTH;
     const height = GRAPH_HEIGHT;
@@ -149,69 +203,117 @@
         },
         [
           h("defs", { key: "defs" }, [
-            h("linearGradient", { id: "areaGradient", x1: "0%", y1: "0%", x2: "0%", y2: "100%" }, [
+            // PINK GRADIENTS (Base)
+            h("linearGradient", { id: "pinkAreaGradient", x1: "0%", y1: "0%", x2: "0%", y2: "100%" }, [
               h("stop", { offset: "0%", stopColor: "rgba(236, 72, 153, 0.4)" }, [
                 h("animate", { attributeName: "stop-opacity", values: "0.4; 0.6; 0.4", dur: "3s", repeatCount: "indefinite" })
               ]),
               h("stop", { offset: "100%", stopColor: "rgba(236, 72, 153, 0)" })
             ]),
-            // Moving Horizontal Flow (Extra Texture)
-            h("linearGradient", { id: "flowGradient", x1: "0%", y1: "0%", x2: "100%", y2: "0%" }, [
+            h("linearGradient", { id: "pinkFlowGradient", x1: "0%", y1: "0%", x2: "100%", y2: "0%" }, [
               h("stop", { offset: "0%", stopColor: "rgba(236, 72, 153, 0)" }),
               h("stop", { offset: "50%", stopColor: "rgba(236, 72, 153, 0.2)" }),
               h("stop", { offset: "100%", stopColor: "rgba(236, 72, 153, 0)" }),
               h("animate", { attributeName: "x1", values: "-100%; 100%", dur: "3s", repeatCount: "indefinite" }),
               h("animate", { attributeName: "x2", values: "0%; 200%", dur: "3s", repeatCount: "indefinite" })
             ]),
+
+            // BLUE GRADIENTS (Overlay)
+            h("linearGradient", { id: "blueAreaGradient", x1: "0%", y1: "0%", x2: "0%", y2: "100%" }, [
+              h("stop", { offset: "0%", stopColor: "rgba(59, 130, 246, 0.4)" }, [
+                h("animate", { attributeName: "stop-opacity", values: "0.4; 0.6; 0.4", dur: "3s", repeatCount: "indefinite" })
+              ]),
+              h("stop", { offset: "100%", stopColor: "rgba(59, 130, 246, 0)" })
+            ]),
+            h("linearGradient", { id: "blueFlowGradient", x1: "0%", y1: "0%", x2: "100%", y2: "0%" }, [
+              h("stop", { offset: "0%", stopColor: "rgba(59, 130, 246, 0)" }),
+              h("stop", { offset: "50%", stopColor: "rgba(59, 130, 246, 0.2)" }),
+              h("stop", { offset: "100%", stopColor: "rgba(59, 130, 246, 0)" }),
+              h("animate", { attributeName: "x1", values: "-100%; 100%", dur: "3s", repeatCount: "indefinite" }),
+              h("animate", { attributeName: "x2", values: "0%; 200%", dur: "3s", repeatCount: "indefinite" })
+            ]),
+
             h("filter", { id: "glow", x: "-50%", y: "-50%", width: "200%", height: "200%" }, [
               h("feGaussianBlur", { stdDeviation: "3", result: "coloredBlur" }),
               h("feMerge", { key: "m" }, [
                 h("feMergeNode", { in: "coloredBlur" }),
                 h("feMergeNode", { in: "SourceGraphic" })
               ])
-            ])
+            ]),
+
+            // CLIP PATH for Selected Range
+            h("clipPath", { id: "rangeClip" },
+              h("rect", {
+                x: padding.left,
+                y: scaleY(high),
+                width: width - padding.left - padding.right,
+                height: Math.max(0, scaleY(low) - scaleY(high)),
+              })
+            )
           ]),
 
           // Render Grid First (Behind)
           ...gridYLines,
           ...gridXLines,
 
-          // Area Fill (Base)
-          h("polyline", {
-            key: "area",
-            points: `${padding.left},${height - padding.bottom} ${points} ${width - padding.right},${height - padding.bottom}`,
-            fill: "url(#areaGradient)",
-            stroke: "none",
-          }),
-          // Area Flow Texture (Animated)
-          h("polyline", {
-            key: "area-flow",
-            points: `${padding.left},${height - padding.bottom} ${points} ${width - padding.right},${height - padding.bottom}`,
-            fill: "url(#flowGradient)",
-            stroke: "none",
-            style: { mixBlendMode: "screen" }
-          }),
+          // --- BASE LAYER (PINK) ---
+          h("g", { key: "base-layer" }, [
+            h("polyline", {
+              points: `${padding.left},${height - padding.bottom} ${points} ${width - padding.right},${height - padding.bottom}`,
+              fill: "url(#pinkAreaGradient)",
+              stroke: "none",
+            }),
+            h("polyline", {
+              points: `${padding.left},${height - padding.bottom} ${points} ${width - padding.right},${height - padding.bottom}`,
+              fill: "url(#pinkFlowGradient)",
+              stroke: "none",
+              style: { mixBlendMode: "screen" }
+            }),
+            h("polyline", {
+              points,
+              fill: "none",
+              stroke: "#ec4899",
+              strokeWidth: "3",
+              strokeLinejoin: "round",
+              strokeLinecap: "round",
+              style: { filter: "url(#glow)" }
+            })
+          ]),
 
-          // Main Line
-          h("polyline", {
-            key: "line",
-            points,
-            fill: "none",
-            stroke: "#ec4899",
-            strokeWidth: "3",
-            strokeLinejoin: "round",
-            strokeLinecap: "round",
-            style: { filter: "url(#glow)" }
-          }),
+          // --- OVERLAY LAYER (BLUE) - Clipped ---
+          h("g", { key: "blue-layer", clipPath: "url(#rangeClip)" }, [
+            h("polyline", {
+              points: `${padding.left},${height - padding.bottom} ${points} ${width - padding.right},${height - padding.bottom}`,
+              fill: "url(#blueAreaGradient)",
+              stroke: "none",
+            }),
+            h("polyline", {
+              points: `${padding.left},${height - padding.bottom} ${points} ${width - padding.right},${height - padding.bottom}`,
+              fill: "url(#blueFlowGradient)",
+              stroke: "none",
+              style: { mixBlendMode: "screen" }
+            }),
+            h("polyline", {
+              points,
+              fill: "none",
+              stroke: "#3b82f6",
+              strokeWidth: "3",
+              strokeLinejoin: "round",
+              strokeLinecap: "round",
+              style: { filter: "url(#glow)" }
+            })
+          ]),
 
-          // Data Points
+          // Data Points (Individual coloring is cheaper/cleaner here than clipping circles)
           points.split(" ").map((p, idx) => {
             const [x, y] = p.split(",").map(Number);
+            const val = data[idx];
+            const inDist = val >= low && val <= high;
             return h("circle", {
               key: `pt-${idx}`,
               cx: x, cy: y,
               r: 3,
-              fill: "#ec4899",
+              fill: inDist ? "#3b82f6" : "#ec4899", // Blue if in range, Pink if out
               stroke: "none",
               strokeWidth: "0",
             });
@@ -224,7 +326,7 @@
     ]);
   };
 
-  const RangeOverlay = ({ low, high, onChange }) => {
+  const RangeOverlay = ({ low, high, onChange, mode = 'over' }) => {
     const overlayRef = useRef(null);
     const bandRef = useRef(null);
     const dragging = useRef(null);
@@ -484,10 +586,11 @@
             right: paddingRightPctStr,
             width: 'auto'
           },
-          onMouseDown: handleBandStart,
-          onTouchStart: handleBandStart
+          onMouseDown: (e) => e.preventDefault(), // Disable band dragging
+          onTouchStart: (e) => e.preventDefault() // Disable band dragging
         }),
-        h("div", {
+        // Show Low Handle ONLY if mode is 'over' (user controls low)
+        mode === 'over' ? h("div", {
           key: "handle-low",
           className: "range-handle range-handle-low",
           style: {
@@ -497,8 +600,8 @@
           },
           onMouseDown: handleHandleStart("low"),
           onTouchStart: handleHandleStart("low")
-        }, h("div", { className: "handle-pill" }, safeLow)),
-        h("div", {
+        }, h("div", { className: "handle-pill" }, safeLow)) : null,
+        mode === 'under' ? h("div", {
           key: "handle-high",
           className: "range-handle range-handle-high",
           style: {
@@ -508,7 +611,7 @@
           },
           onMouseDown: handleHandleStart("high"),
           onTouchStart: handleHandleStart("high")
-        }, h("div", { className: "handle-pill" }, safeHigh)),
+        }, h("div", { className: "handle-pill" }, safeHigh)) : null,
       ]
     );
   };
@@ -517,7 +620,7 @@
      GRAPH LABELS OVERLAY COMPONENT
      Renders text and pills on top of the blur mask
   */
-  const GraphLabelsOverlay = ({ data, width, height, padding }) => {
+  const GraphLabelsOverlay = ({ data, width, height, padding, low, high }) => {
     // Replicate scaling logic to align perfectly with LineGraph
     const maxY = TICKS; // FIXED: Use global TICKS (1000)
     const minY = 0;
@@ -525,6 +628,11 @@
 
     const scaleX = (width - padding.left - padding.right) / Math.max(data.length - 1, 1); // Match LineGraph X scale
     const scaleY = (height - padding.top - padding.bottom) / rangeY;
+
+    // Check last point status
+    const lastVal = data[data.length - 1];
+    const isLastInRange = lastVal >= low && lastVal <= high;
+    const activeColor = isLastInRange ? "#3b82f6" : "#ec4899";
 
     return h("svg", {
       width: "100%",
@@ -589,7 +697,14 @@
             style: { overflow: 'visible' }
           }, h("div", {
             className: "handle-pill last-tick",
-            style: { width: '100%', height: '100%', padding: '0' }
+            style: {
+              width: '100%',
+              height: '100%',
+              padding: '0',
+              background: activeColor, // Dynamic Background
+              boxShadow: `0 0 12px ${activeColor}cc`, // Dynamic Glow
+              borderColor: '#fff'
+            }
           }, priceStr));
         }
 
@@ -623,7 +738,7 @@
           cx: lastX, cy: lastY,
           r: 8,
           fill: "#ffffff",
-          stroke: "#3b82f6",
+          stroke: activeColor, // Dynamic Stroke
           strokeWidth: "3",
           style: { filter: "url(#glow)", animation: "pulse-dot 2s infinite" }
         });
@@ -637,6 +752,196 @@
      DEFI PREDICTION GAME
      App Component - Implements Swap Interface & Range Logic
   */
+  /* 
+     PROVABLY FAIR MODAL
+  */
+  const ProvablyFairModal = ({
+    isOpen,
+    onClose,
+    serverSeedHash,
+    clientSeed,
+    nonce,
+    onRotate,
+    onChangeClientSeed,
+    prevServerSeed,
+    prevClientSeed,
+    prevNonceMax
+  }) => {
+    const [activeTab, setActiveTab] = useState('seeds'); // 'seeds' | 'verify'
+
+    // Verify State
+    const [vServerSeed, setVServerSeed] = useState("");
+    const [vClientSeed, setVClientSeed] = useState("");
+    const [vNonce, setVNonce] = useState("");
+    const [vResult, setVResult] = useState(null);
+    const [showHelp, setShowHelp] = useState(false); // Help Toggle
+
+    // Auto-fill verify form when rotating
+    useEffect(() => {
+      if (prevServerSeed) {
+        setVServerSeed(prevServerSeed);
+        setVClientSeed(prevClientSeed || "");
+        // Default to the LAST played game (prevNonceMax - 1) so it matches the screen
+        setVNonce(prevNonceMax > 0 ? prevNonceMax - 1 : 0);
+      }
+    }, [prevServerSeed, prevClientSeed, prevNonceMax]);
+
+    const handleVerify = async () => {
+      if (!vServerSeed || !vClientSeed || vNonce === "") return;
+      const tick = await generateResult(vServerSeed, vClientSeed, parseInt(vNonce));
+      setVResult(tick);
+    };
+
+    if (!isOpen) return null;
+
+    return h("div", { className: "modal-backdrop", onClick: onClose }, [
+      h("div", { className: "modal", onClick: e => e.stopPropagation() }, [
+        h("div", { className: "modal-header" }, [
+          h("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [
+            h("h3", { className: "modal-title" }, "Fairness"),
+            h("button", {
+              className: "icon-btn help-btn",
+              onClick: () => setShowHelp(!showHelp),
+              title: "How it works"
+            }, "?")
+          ]),
+          h("button", { className: "close", onClick: onClose }, "✕")
+        ]),
+
+        showHelp ? h("div", { className: "help-view" }, [
+          h("h4", {}, "How to verify fairness"),
+          h("p", {}, "Our system uses industry-standard cryptography (HMAC-SHA256) to ensure transparency."),
+          h("div", { className: "help-steps" }, [
+            h("div", { className: "step" }, [
+              h("span", { className: "step-num" }, "1"),
+              h("p", {}, "We show you the hashed server seed before you play. This proves we can't change the seed later.")
+            ]),
+            h("div", { className: "step" }, [
+              h("span", { className: "step-num" }, "2"),
+              h("p", {}, "You can randomize your Client Seed at any time. The result is calculated using both our seed and yours.")
+            ]),
+            h("div", { className: "step" }, [
+              h("span", { className: "step-num" }, "3"),
+              h("p", {}, "Click 'Rotate Seed' to reveal the previous Server Seed. You can then use the 'Verify' tab to check that the game results remain consistent.")
+            ]),
+          ]),
+          h("button", { className: "btn secondary full-width", onClick: () => setShowHelp(false) }, "Got it")
+
+        ]) : [
+          // Tabs
+          h("div", { className: "modal-tabs", key: "tabs" }, [
+            h("button", {
+              className: `tab-btn ${activeTab === 'seeds' ? 'active' : ''}`,
+              onClick: () => setActiveTab('seeds')
+            }, "Active Seeds"),
+            h("button", {
+              className: `tab-btn ${activeTab === 'verify' ? 'active' : ''}`,
+              onClick: () => setActiveTab('verify')
+            }, "Verify")
+          ]),
+
+          h("div", { className: "modal-body", key: "body" }, [
+            activeTab === 'seeds' ? h("div", { className: "seeds-view" }, [
+              h("div", { className: "input-group" }, [
+                h("label", {}, "Active Client Seed (Editable)"),
+                h("div", { className: "input-row" }, [
+                  h("input", {
+                    type: "text",
+                    value: clientSeed,
+                    onChange: e => onChangeClientSeed(e.target.value),
+                    className: "seed-input"
+                  }),
+                  h("button", {
+                    className: "icon-btn",
+                    onClick: () => onChangeClientSeed(generateRandomHex(16)),
+                    title: "Randomize"
+                  }, "🎲")
+                ])
+              ]),
+              h("div", { className: "input-group" }, [
+                h("label", {}, "Active Server Seed (Hashed)"),
+                h("input", { type: "text", value: serverSeedHash, readOnly: true, className: "seed-input readonly" })
+              ]),
+              h("div", { className: "input-group" }, [
+                h("label", {}, "Nonce"),
+                h("input", { type: "number", value: nonce, readOnly: true, className: "seed-input readonly" })
+              ]),
+              h("div", { className: "rotate-section" }, [
+                h("p", { className: "notice" }, "Rotate your seed to reveal the previous server seed and verify past bets."),
+                h("button", { className: "btn primary full-width", onClick: onRotate }, "Rotate Seed")
+              ]),
+
+              // Reveal Section
+              prevServerSeed && h("div", { className: "revealed-section" }, [
+                h("h4", {}, "Previous Seed Pair (Revealed)"),
+                h("div", { className: "input-group" }, [
+                  h("label", {}, "Server Seed"),
+                  h("div", { className: "input-row" }, [
+                    h("input", { type: "text", value: prevServerSeed, readOnly: true, className: "seed-input readonly" }),
+                    h("button", {
+                      className: "icon-btn",
+                      onClick: () => navigator.clipboard.writeText(prevServerSeed),
+                      title: "Copy"
+                    }, "📋")
+                  ])
+                ]),
+                h("div", { className: "input-group" }, [
+                  h("label", {}, "Client Seed"),
+                  h("div", { className: "input-row" }, [
+                    h("input", { type: "text", value: prevClientSeed, readOnly: true, className: "seed-input readonly" }),
+                    h("button", {
+                      className: "icon-btn",
+                      onClick: () => navigator.clipboard.writeText(prevClientSeed),
+                      title: "Copy"
+                    }, "📋")
+                  ])
+                ]),
+                h("button", {
+                  className: "btn secondary full-width",
+                  onClick: () => setActiveTab('verify')
+                }, "Verify Previous Outcomes")
+              ])
+            ]) : h("div", { className: "verify-view" }, [
+              h("div", { className: "input-group" }, [
+                h("label", {}, "Server Seed"),
+                h("input", {
+                  type: "text",
+                  value: vServerSeed,
+                  onChange: e => setVServerSeed(e.target.value),
+                  className: "seed-input"
+                })
+              ]),
+              h("div", { className: "input-group" }, [
+                h("label", {}, "Client Seed"),
+                h("input", {
+                  type: "text",
+                  value: vClientSeed,
+                  onChange: e => setVClientSeed(e.target.value),
+                  className: "seed-input"
+                })
+              ]),
+              h("div", { className: "input-group" }, [
+                h("label", {}, "Nonce"),
+                h("input", {
+                  type: "number",
+                  value: vNonce,
+                  onChange: e => setVNonce(e.target.value),
+                  className: "seed-input"
+                })
+              ]),
+              h("button", { className: "btn secondary full-width", onClick: handleVerify }, "Verify Outcome"),
+
+              vResult !== null && h("div", { className: "verify-result" }, [
+                h("span", {}, "Result:"),
+                h("strong", { className: "result-value" }, vResult)
+              ])
+            ])
+          ])
+        ]
+      ])
+    ]);
+  };
+
   /*
      DEFI PREDICTION GAME
      History Tape Component
@@ -730,9 +1035,50 @@
     const [baseBet, setBaseBet] = useState(25);
     const [currentBet, setCurrentBet] = useState(25);
 
-    const [range, setRange] = useState({ low: 420, high: 620 });
+    // Mod: Initialize with Over mode default
+    const [rangeMode, setRangeMode] = useState('over'); // 'over' | 'under'
+    const [range, setRange] = useState({ low: 420, high: TICKS });
     const [status, setStatus] = useState("idle");
     const [lastResult, setLastResult] = useState(null);
+
+    // Provably Fair State
+    const [clientSeed, setClientSeed] = useState("client-seed-12345");
+    const [serverSeed, setServerSeed] = useState(""); // The ACTUAL secret seed
+    const [serverSeedHash, setServerSeedHash] = useState(""); // The PUBLIC hash
+    const [nonce, setNonce] = useState(0);
+    const [showFairModal, setShowFairModal] = useState(false);
+
+    // Previous Seeds (for verification after rotate)
+    const [prevServerSeed, setPrevServerSeed] = useState(null);
+    const [prevClientSeed, setPrevClientSeed] = useState(null);
+    const [prevNonceMax, setPrevNonceMax] = useState(0);
+
+    // Init Seeds
+    useEffect(() => {
+      const init = async () => {
+        const s = generateRandomHex(64);
+        const h = await sha256(s);
+        setServerSeed(s);
+        setServerSeedHash(h);
+        // Randomize default client seed
+        setClientSeed(generateRandomHex(16));
+      };
+      init();
+    }, []);
+
+    const rotateSeed = async () => {
+      // 1. Save current as "Previous"
+      setPrevServerSeed(serverSeed);
+      setPrevClientSeed(clientSeed);
+      setPrevNonceMax(nonce);
+
+      // 2. Generate New
+      const newS = generateRandomHex(64);
+      const newH = await sha256(newS);
+      setServerSeed(newS);
+      setServerSeedHash(newH);
+      setNonce(0);
+    };
 
     // Stats State
     const [view, setView] = useState('game'); // 'game' | 'stats'
@@ -778,21 +1124,37 @@
 
     // Interaction Handlers
     const handleRangeChange = (newRange) => {
-      // UPDATED: Allow 0 logic
       let { low, high } = newRange;
-      low = Math.max(0, Math.min(low, TICKS - 1)); // Allow 0
+
+      // Strict Bounds
+      low = Math.max(0, Math.min(low, TICKS - 1));
       high = Math.max(low + 1, Math.min(high, TICKS));
 
-      // Enforce Max Size 750 (Min Payout > 1.0)
-      if (high - low > 750) {
-        high = low + 750;
-        if (high > TICKS) { // If shifting high hits ceil, shift low back
-          high = TICKS;
-          low = TICKS - 750;
-        }
+      if (rangeMode === 'over') {
+        // Enforce pinned TOP
+        high = TICKS;
+        // Limit Max Size (750) => Min Low = TICKS - 750
+        const minLow = TICKS - 750;
+        if (low < minLow) low = minLow;
+      } else {
+        // Enforce pinned BOTTOM
+        low = 0;
+        // Limit Max Size (750) => Max High = 750
+        const maxHigh = 750;
+        if (high > maxHigh) high = maxHigh;
       }
 
       setRange({ low, high });
+    };
+
+    const toggleMode = (mode) => {
+      if (mode === rangeMode) return;
+      setRangeMode(mode);
+      if (mode === 'over') {
+        setRange({ low: 500, high: TICKS });
+      } else {
+        setRange({ low: 0, high: 500 });
+      }
     };
 
     // Reverse Calculation for Payout Input
@@ -851,28 +1213,30 @@
 
       setPayoutError(warning);
 
-      // Center the new size on current center
-      const currentCenter = Math.round((range.low + range.high) / 2);
-      let newLow = Math.round(currentCenter - (newSize / 2));
-      let newHigh = newLow + newSize;
+      // Mode-Aware Range Setting
+      let newLow, newHigh;
 
-      // Boundary Checks
-      if (newLow < 1) {
-        newLow = 1;
-        newHigh = newLow + newSize;
-      }
-      if (newHigh > TICKS) {
+      if (rangeMode === 'over') {
         newHigh = TICKS;
-        newLow = newHigh - newSize;
+        newLow = TICKS - newSize;
+      } else {
+        newLow = 0;
+        newHigh = newSize;
       }
+
+      // Safety
+      if (newLow < 0) newLow = 0;
+      if (newHigh > TICKS) newHigh = TICKS;
 
       setRange({ low: newLow, high: newHigh });
     };
 
     // Game Logic
     // Defined BEFORE playRound to avoid any const hoisting/TDZ issues
-    const finalizeRound = (betAmount) => {
-      const finalPrice = randomPrice();
+    const finalizeRound = async (betAmount) => {
+      const finalPrice = await generateResult(serverSeed, clientSeed, nonce);
+      // Increment Nonce
+      setNonce(n => n + 1);
 
       setHistory(prev => {
         const shift = prev.slice(1);
@@ -956,6 +1320,7 @@
       setStatus('playing');
       setAnimClass("");
 
+      // Use setTimeout for animation delay, but call async finalizeRound
       setTimeout(() => { finalizeRound(activeBet); }, 600);
     };
 
@@ -993,7 +1358,7 @@
 
       if (newBet > balance) {
         newBet = balance;
-        setPayError("Insufficient balance - Capped at Max");
+        setPayError(null); // Suppress error
       } else {
         setPayError(null);
       }
@@ -1001,6 +1366,18 @@
     };
 
     return h("div", { className: "shell" }, [
+      h(ProvablyFairModal, {
+        isOpen: showFairModal,
+        onClose: () => setShowFairModal(false),
+        serverSeedHash,
+        clientSeed,
+        nonce,
+        onRotate: rotateSeed,
+        onChangeClientSeed: setClientSeed,
+        prevServerSeed,
+        prevClientSeed,
+        prevNonceMax
+      }),
       // Header
       h("div", { className: "header", key: "header" }, [
         h("div", { style: { display: "flex", alignItems: "center" } }, [
@@ -1016,7 +1393,13 @@
               className: `nav-item ${view === 'stats' ? 'active' : ''}`,
               onClick: () => setView('stats')
             }, "Stats")
-          ])
+          ]),
+          // Fairness Button
+          h("button", {
+            className: "btn ghost narrow",
+            onClick: () => setShowFairModal(true),
+            style: { marginLeft: "auto", padding: "6px 12px", fontSize: "12px" }
+          }, "⚖️ Fairness")
         ]),
         h("div", { className: "wallet-pill", key: "w" }, [
           h("span", { style: { opacity: 0.6 } }, "BAL"),
@@ -1041,15 +1424,27 @@
                 h("div", { key: "l1", style: { display: "flex", flexDirection: "column", gap: "4px" } }, [
                   h("span", { style: { fontSize: "16px", fontWeight: "700", color: "#fff" } }, "Guess the next price"),
                   h("span", { style: { fontSize: "13px", color: "#98a1c0" } }, "Shorter range = Higher win")
+                ]),
+                // Direction Toggle (Moved to Graph Header)
+                h("div", { className: "mode-switch" }, [
+                  h("button", {
+                    className: `mode-option over ${rangeMode === 'over' ? 'active' : ''}`,
+                    onClick: () => toggleMode('over')
+                  }, "Over"),
+                  h("button", {
+                    className: `mode-option under ${rangeMode === 'under' ? 'active' : ''}`,
+                    onClick: () => toggleMode('under')
+                  }, "Under")
                 ])
               ]),
 
               h("div", { className: "graph-shell", key: "gs" }, [
-                h("div", { className: "graph", key: "g-inner" }, h(LineGraph, { data: history })),
+                h("div", { className: "graph", key: "g-inner" }, h(LineGraph, { data: history, low: range.low, high: range.high })),
                 h(RangeOverlay, {
                   key: "overlay",
                   low: range.low,
                   high: range.high,
+                  mode: rangeMode,
                   onChange: handleRangeChange
                 }),
                 // New Top Layer for Labels (Unblurred)
@@ -1057,7 +1452,9 @@
                   data: history,
                   width: GRAPH_WIDTH,
                   height: GRAPH_HEIGHT,
-                  padding: GRAPH_PADDING
+                  padding: GRAPH_PADDING,
+                  low: range.low,
+                  high: range.high
                 })
               ]), // End Graph Shell
             ]), // End Card (Graph Column)
@@ -1068,9 +1465,10 @@
               // "You Pay" Section
               h("div", { className: `swap-input-container ${payError ? 'input-error' : ''}`, key: "pay" }, [
                 h("div", { className: "swap-label-row" }, [
-                  h("span", {}, status === 'won_streak' ? "Accumulated Bet" : "You pay"),
+                  h("span", {}, status === 'won_streak' ? "Total Winnings" : "You pay"),
                   h("span", { className: "balance-label" }, `Balance: ${formatCurrency(balance)} USDC`)
                 ]),
+
                 h("div", { className: "swap-input-row" }, [
                   h("input", {
                     className: "token-input",
@@ -1101,7 +1499,7 @@
                         // Auto-Cap Logic for Manual Input
                         if (val > balance) {
                           val = Math.floor(balance); // Cap at integer balance
-                          setPayError("Insufficient balance - Capped at Max");
+                          setPayError(null); // Suppress error
                         } else if (val < 0) {
                           val = 0; // Strictly disallow negative
                           setPayError(null);
@@ -1175,13 +1573,15 @@
               ]),
               payoutError && h("div", { style: { color: "#fd4f4f", fontSize: "12px", marginTop: "4px", paddingLeft: "4px" } }, payoutError),
               h("div", { className: "swap-info", key: "info" }, [
+                // 1. Selected Range (First item now)
                 h("div", { className: "info-row" }, [
                   h("span", {}, "Selected Range"),
-                  h("span", {}, `${range.low} - ${range.high}`) // Display 0-based index
+                  h("span", {}, rangeMode === 'over' ? `Over ${range.low} ` : `Under ${range.high} `)
                 ]),
+                // 3. Win Probability
                 h("div", { className: "info-row" }, [
                   h("span", {}, "Win Probability"),
-                  h("span", {}, `${((range.high - range.low) / 10).toFixed(1)}%`)
+                  h("span", {}, `${((range.high - range.low) / 10).toFixed(1)}% `)
                 ])
               ]),
               h("div", { style: { display: "flex", gap: "8px", marginTop: "8px" } }, [
