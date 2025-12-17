@@ -1150,10 +1150,31 @@
     const toggleMode = (mode) => {
       if (mode === rangeMode) return;
       setRangeMode(mode);
+
       if (mode === 'over') {
-        setRange({ low: 500, high: TICKS });
+        // Switching to OVER: Use previous HIGH as the new LOW (Threshold conservation)
+        let newLow = range.high;
+
+        // Constraints
+        const minLow = TICKS - 750; // Max Range Size 750
+        const maxLow = TICKS - 10;  // Min Range Size 10
+
+        if (newLow < minLow) newLow = minLow;
+        if (newLow > maxLow) newLow = maxLow;
+
+        setRange({ low: newLow, high: TICKS });
       } else {
-        setRange({ low: 0, high: 500 });
+        // Switching to UNDER: Use previous LOW as the new HIGH (Threshold conservation)
+        let newHigh = range.low;
+
+        // Constraints
+        const maxHigh = 750; // Max Range Size 750
+        const minHigh = 10;  // Min Range Size 10
+
+        if (newHigh > maxHigh) newHigh = maxHigh;
+        if (newHigh < minHigh) newHigh = minHigh;
+
+        setRange({ low: 0, high: newHigh });
       }
     };
 
