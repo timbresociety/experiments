@@ -1380,26 +1380,35 @@
       }),
       // Header
       h("div", { className: "header", key: "header" }, [
-        h("div", { style: { display: "flex", alignItems: "center" } }, [
-          h("img", { src: "logo.svg", className: "app-logo", alt: "TickPredict" }),
-          h("div", { className: "title", key: "t" }, "TickPredict"),
-          // Navigation Tabs
-          h("div", { className: "nav-tabs" }, [
-            h("div", {
-              className: `nav-item ${view === 'game' ? 'active' : ''}`,
-              onClick: () => setView('game')
-            }, "Trade"),
-            h("div", {
-              className: `nav-item ${view === 'stats' ? 'active' : ''}`,
-              onClick: () => setView('stats')
-            }, "Stats")
+        h("div", { className: "header-branding" }, [
+          // Group 1: Brand
+          h("div", { className: "brand-group" }, [
+            h("img", { src: "logo.svg", className: "app-logo", alt: "TickPredict" }),
+            h("div", { className: "title", key: "t" }, "TickPredict"),
           ]),
-          // Fairness Button
-          h("button", {
-            className: "btn ghost narrow",
-            onClick: () => setShowFairModal(true),
-            style: { marginLeft: "auto", padding: "6px 12px", fontSize: "12px" }
-          }, "⚖️ Fairness")
+
+          // Group 2: Nav & Actions
+          h("div", { className: "nav-group" }, [
+            h("div", { className: "nav-tabs" }, [
+              h("div", {
+                className: `nav-item ${view === 'game' ? 'active' : ''}`,
+                onClick: () => setView('game')
+              }, "Trade"),
+              h("div", {
+                className: `nav-item ${view === 'stats' ? 'active' : ''}`,
+                onClick: () => setView('stats')
+              }, "Stats"),
+            ]),
+            // Fairness Button
+            h("button", {
+              className: "fairness-pill",
+              onClick: () => setShowFairModal(true),
+              title: "Fairness"
+            }, [
+              h("span", { style: { fontSize: "14px", lineHeight: 1 } }, "🛡️"),
+              "Fairness"
+            ])
+          ])
         ]),
         h("div", { className: "wallet-pill", key: "w" }, [
           h("span", { style: { opacity: 0.6 } }, "BAL"),

@@ -103,6 +103,24 @@ a {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
+.header-branding {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  /* Take available space to separate Brand and Nav, pushing Wallet to end */
+}
+
+.brand-group {
+  display: flex;
+  align-items: center;
+}
+
+.nav-group {
+  display: flex;
+  align-items: center;
+}
+
 .title {
   font-size: 32px;
   /* Larger */
@@ -841,11 +859,35 @@ a {
     flex-direction: column;
     align-items: flex-start;
     gap: 16px;
+    border-radius: 24px;
+    /* Fix pill shape distortion */
+    padding: 16px;
   }
 
-  .header>div {
+  .header-branding {
+    width: 100%;
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .brand-group {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .nav-group {
+    width: 100%;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  .nav-tabs {
+    margin-left: 0;
+  }
+
+  .fairness-pill {
+    margin-left: 0;
   }
 
   .title {
@@ -1554,6 +1596,7 @@ a {
 .btn.narrow {
   padding: 6px 12px;
 }
+
 /* Help View Styles */
 .help-btn {
   background: rgba(255, 255, 255, 0.1);
@@ -1625,8 +1668,15 @@ a {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Revealed Seeds Section */
@@ -1644,4 +1694,67 @@ a {
   font-size: 14px;
   font-weight: 700;
   color: var(--success);
+}
+
+/* Nav Icon Button */
+.nav-icon-btn {
+  background: transparent;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  margin-left: 4px;
+  /* Space from tabs */
+  padding: 0;
+}
+
+.nav-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: scale(1.1);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.nav-icon-btn:active {
+  transform: scale(0.95);
+}
+
+.fairness-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 16px;
+  border-radius: 999px;
+  color: var(--subtext);
+  font-family: 'Outfit', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  margin-left: 8px;
+  /* Optically separate from nav */
+}
+
+.fairness-pill:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.fairness-pill:active {
+  transform: translateY(0);
+  opacity: 0.8;
 }
